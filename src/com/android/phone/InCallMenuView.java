@@ -365,7 +365,7 @@ class InCallMenuView extends ViewGroup {
                              resolveSize(desiredHeight, heightMeasureSpec));
 
         // Position the children
-        positionChildren(getMeasuredWidth(), getMeasuredHeight());
+        positionChildren(mMeasuredWidth, mMeasuredHeight);
     }
 
     @Override
