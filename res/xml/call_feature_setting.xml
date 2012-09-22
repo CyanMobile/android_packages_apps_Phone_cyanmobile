@@ -84,6 +84,11 @@
 <!--  Created and modified by cytown@gmail.com for modified Phone app usage -->
 <PreferenceCategory android:key="pref_advanced_settings" android:title="@string/advanced_setting">
     <CheckBoxPreference
+        android:key="lockscreen_if_call_ends_with_screenoff"
+        android:title="@string/lockscreen_if_call_ends_with_screenoff"
+        android:persistent="false"
+        android:summary="@string/lockscreen_if_call_ends_with_screenoff_sum"/>
+    <CheckBoxPreference
         android:key="button_vibrate_outgoing"
         android:title="@string/vibrate_outgoing"
         android:persistent="false"

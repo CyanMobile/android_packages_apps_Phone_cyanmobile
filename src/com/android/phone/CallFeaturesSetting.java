@@ -163,6 +163,8 @@ public class CallFeaturesSetting extends PreferenceActivity
             "sip_call_options_wifi_only_key";
     private static final String SIP_SETTINGS_CATEGORY_KEY =
             "sip_settings_category_key";
+    private static final String LOCKSCREEN_IF_CALL_ENDS_WITH_SCREENOFF =
+            "lockscreen_if_call_ends_with_screenoff";
 
     private Intent mContactListIntent;
 
@@ -231,6 +233,7 @@ public class CallFeaturesSetting extends PreferenceActivity
     private ListPreference mButtonVoiceQuality;
     private PreferenceScreen mVoicemailSettings;
     private SipSharedPreferences mSipSharedPreferences;
+    private CheckBoxPreference mCallEndedWithScreenOffLocks;
 
     private class VoiceMailProvider {
         public VoiceMailProvider(String name, Intent intent) {
@@ -569,6 +572,10 @@ public class CallFeaturesSetting extends PreferenceActivity
             int index = mButtonDTMF.findIndexOfValue((String) objValue);
             Settings.System.putInt(mPhone.getContext().getContentResolver(),
                     Settings.System.DTMF_TONE_TYPE_WHEN_DIALING, index);
+        } else if (preference == mCallEndedWithScreenOffLocks) {
+            boolean doLock = (Boolean) objValue;
+            Settings.System.putInt(mPhone.getContext().getContentResolver(),
+                    Settings.System.LOCKSCREEN_IF_CALL_ENDS_WITH_SCREENOFF, doLock ? 1 : 0);
         } else if (preference == mButtonTTY) {
             handleTTYChange(preference, objValue);
         } else if (preference == mButtonVoiceQuality) {
@@ -1596,6 +1603,11 @@ public class CallFeaturesSetting extends PreferenceActivity
             }
         }
 
+        if (mCallEndedWithScreenOffLocks != null) {
+            mCallEndedWithScreenOffLocks.setChecked(Settings.System.getInt(getContentResolver(),
+                   Settings.System.LOCKSCREEN_IF_CALL_ENDS_WITH_SCREENOFF, 1) == 1);
+	    mCallEndedWithScreenOffLocks.setOnPreferenceChangeListener(this);
+        }
         if (mButtonDTMF != null) {
             if (getResources().getBoolean(R.bool.dtmf_type_enabled)) {
                 mButtonDTMF.setOnPreferenceChangeListener(this);
@@ -1710,6 +1722,7 @@ public class CallFeaturesSetting extends PreferenceActivity
         mButtonShowOrgan.setChecked(mShowOrgan);
         mButtonRejectSms = (CheckBoxPreference) findPreference(BUTTON_RESPOND_VIA_SMS);
         mButtonRejectSms.setChecked(OktoReject);
+        mCallEndedWithScreenOffLocks = (CheckBoxPreference) findPreference(LOCKSCREEN_IF_CALL_ENDS_WITH_SCREENOFF);
         // mButtonTurnSilence = (CheckBoxPreference) prefSet.findPreference(BUTTON_TURN_SILENCE);
         // mButtonTurnSilence.setChecked(mTurnSilence);
         mButtonLeftHand = (CheckBoxPreference) prefSet.findPreference(BUTTON_LEFT_HAND);
@@ -1825,17 +1838,23 @@ public class CallFeaturesSetting extends PreferenceActivity
             button = findPreference(BUTTON_CDMA_OPTIONS);
             if (button != null) button.setEnabled(false);
         }
-            if (mButtonNotifications != null) {
-                boolean notification =
-                    mButtonNotifications.getSharedPreferences()
-                      .getBoolean(BUTTON_VOICEMAIL_NOTIFICATION_KEY, true);
-                mButtonNotifications.setChecked(notification);
-            }
 
-            if (mButtonDTMF != null) {
-                int dtmf = Settings.System.getInt(getContentResolver(),
-                        Settings.System.DTMF_TONE_TYPE_WHEN_DIALING, DTMF_TONE_TYPE_NORMAL);
-                mButtonDTMF.setValueIndex(dtmf);
+        if (mButtonNotifications != null) {
+            boolean notification =
+                mButtonNotifications.getSharedPreferences()
+                  .getBoolean(BUTTON_VOICEMAIL_NOTIFICATION_KEY, true);
+            mButtonNotifications.setChecked(notification);
+        }
+
+        if (mCallEndedWithScreenOffLocks != null) {
+            mCallEndedWithScreenOffLocks.setChecked(Settings.System.getInt(getContentResolver(),
+                    Settings.System.LOCKSCREEN_IF_CALL_ENDS_WITH_SCREENOFF, 1) == 1);
+        }
+
+        if (mButtonDTMF != null) {
+            int dtmf = Settings.System.getInt(getContentResolver(),
+                    Settings.System.DTMF_TONE_TYPE_WHEN_DIALING, DTMF_TONE_TYPE_NORMAL);
+            mButtonDTMF.setValueIndex(dtmf);
         }
 
         if (mButtonAutoRetry != null) {
