@@ -37,6 +37,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.android.internal.telephony.Call;
@@ -73,8 +74,10 @@ public class CallCard extends FrameLayout
     private PhoneApp mApplication;
 
     // Top-level subviews of the CallCard
-    private ViewGroup mPrimaryCallInfo;
-    private ViewGroup mSecondaryCallInfo;
+    private ViewGroup mCallInfoContainer;  // Container for info about the current call(s)
+    private ViewGroup mPrimaryCallInfo;  // "Call info" block #1 (the foreground or ringing call)
+    private ViewGroup mPrimaryCallBanner;  // "Call banner" for the primary call
+    private ViewGroup mSecondaryCallInfo;  // "Call info" block #2 (the background "on hold" call)
 
     // Title and elapsed-time widgets
     private TextView mUpperTitle;
@@ -173,8 +176,10 @@ public class CallCard extends FrameLayout
 
         if (DBG) log("CallCard onFinishInflate(this = " + this + ")...");
 
-        mPrimaryCallInfo = (ViewGroup) findViewById(R.id.primaryCallInfo);
-        mSecondaryCallInfo = (ViewGroup) findViewById(R.id.secondaryCallInfo);
+        mCallInfoContainer = (ViewGroup) findViewById(R.id.call_info_container);
+        mPrimaryCallInfo = (ViewGroup) findViewById(R.id.call_info_1);
+        mPrimaryCallBanner = (ViewGroup) findViewById(R.id.call_banner_1);
+        mSecondaryCallInfo = (ViewGroup) findViewById(R.id.call_info_2);
 
         // "Upper" and "lower" title widgets
         mUpperTitle = (TextView) findViewById(R.id.upperTitle);
@@ -231,6 +236,9 @@ public class CallCard extends FrameLayout
         Call fgCall = cm.getActiveFgCall();
         Call bgCall = cm.getFirstActiveBgCall();
 
+        // Update the overall layout of the onscreen elements.
+        updateCallInfoLayout(state);
+
         // If the FG call is dialing/alerting, we should display for that call
         // and ignore the ringing call. This case happens when the telephony
         // layer rejects the ringing call while the FG call is dialing/alerting,
@@ -270,6 +278,46 @@ public class CallCard extends FrameLayout
             // In these cases, put the callcard into a sane but "blank" state:
             updateNoCall(cm);
         }
+    }
+
+    /**
+     * Updates the overall size and positioning of mCallInfoContainer and
+     * the "Call info" blocks, based on the phone state.
+     */
+    private void updateCallInfoLayout(Phone.State state) {
+        boolean ringing = (state == Phone.State.RINGING);
+
+        // Based on whether the phone is ringing, update the overall
+        // CallCard layout in a couple of ways:
+
+        // (1) When ringing, shrink mCallInfoContainer by increasing its bottom margin.
+        //     (The incoming-call widget takes up more vertical space than the
+        //     regular in-call button cluster, so while ringing the bottom
+        //     margin needs to be larger so that the call info doesn't overlap
+        //     the widget.)
+        // TODO: Animate this value for the RINGING -> OFFHOOK transition.
+
+        int resId = ringing ? R.dimen.in_call_incoming_call_widget_height
+                : R.dimen.in_call_button_cluster_height;
+        int reservedVerticalSpace = (int) getResources().getDimension(resId);
+        ViewGroup.MarginLayoutParams callInfoLp =
+                (ViewGroup.MarginLayoutParams) mCallInfoContainer.getLayoutParams();
+        callInfoLp.bottomMargin = reservedVerticalSpace;  // Equivalent to setting
+                                                          // android:layout_marginBottom in XML
+        mCallInfoContainer.setLayoutParams(callInfoLp);
+	
+        // (2) Normally, the "call banner" is overlaid across the top of
+        //     the contact photo.  But when ringing, move the banner down to
+        //     the bottom of the photo; this makes it more centered on the
+        //     screen, and closer to the incoming-call widget.
+        //
+        //     Note that while ringing, we only ever display info about one
+        //     call (i.e. the "primary call"), even if two lines are in use.
+        RelativeLayout.LayoutParams bannerLp =
+                (RelativeLayout.LayoutParams) mPrimaryCallBanner.getLayoutParams();
+        bannerLp.addRule(RelativeLayout.ALIGN_PARENT_TOP, ringing ? 0 : RelativeLayout.TRUE);
+        bannerLp.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM, ringing ? RelativeLayout.TRUE : 0);
+        mPrimaryCallBanner.setLayoutParams(bannerLp);
     }
 
     /**
@@ -955,29 +1003,8 @@ public class CallCard extends FrameLayout
                 break;
         }
 
-        if (showSecondaryCallInfo) {
-            // Ok, we have something useful to display in the "secondary
-            // call" info area.
-            mSecondaryCallInfo.setVisibility(View.VISIBLE);
-
-            // Watch out: there are some cases where we need to display the
-            // secondary call photo but *not* the two lines of text above it.
-            // Specifically, that's any state where the CallCard "upper title" is
-            // in use, since the title (e.g. "Dialing" or "Call ended") might
-            // collide with the secondaryCallStatus and secondaryCallName widgets.
-            //
-            // We detect this case by simply seeing whether or not there's any text
-            // in mUpperTitle.  (This is much simpler than detecting all possible
-            // telephony states where the "upper title" is used!  But note it does
-            // rely on the fact that updateCardTitleWidgets() gets called *earlier*
-            // than this method, in the CallCard.updateState() sequence...)
-            boolean okToShowLabels = TextUtils.isEmpty(mUpperTitle.getText());
-            mSecondaryCallName.setVisibility(okToShowLabels ? View.VISIBLE : View.INVISIBLE);
-            mSecondaryCallStatus.setVisibility(okToShowLabels ? View.VISIBLE : View.INVISIBLE);
-        } else {
-            // Hide the entire "secondary call" info area.
-            mSecondaryCallInfo.setVisibility(View.GONE);
-        }
+        // Show or hide the entire "secondary call" info area.	
+        mSecondaryCallInfo.setVisibility(showSecondaryCallInfo ? View.VISIBLE : View.GONE);
     }
 
     private String getCallFailedString(Call call) {
@@ -1198,7 +1225,7 @@ public class CallCard extends FrameLayout
         }
         // And no matter what, on all devices, we never see the "manage
         // conference" button in this state.
-        mManageConferencePhotoButton.setVisibility(View.INVISIBLE);
+        mManageConferencePhotoButton.setVisibility(View.GONE);
 
         if (displayNumber != null && !call.isGeneric()) {
             mPhoneNumber.setText(displayNumber);
@@ -1297,8 +1324,6 @@ public class CallCard extends FrameLayout
             if (mInCallScreen.isTouchUiEnabled()) {
                 // Display the "manage conference" button in place of the photo.
                 mManageConferencePhotoButton.setVisibility(View.VISIBLE);
-                mPhoto.setVisibility(View.INVISIBLE);  // Not GONE, since that would break
-                                                       // other views in our RelativeLayout.
             } else {
                 // Display the "conference call" image in the photo slot,
                 // with no other information.
@@ -1513,6 +1538,12 @@ public class CallCard extends FrameLayout
      * Call state, possibly display an icon along with the title.
      */
     private void setUpperTitle(String title, int color, Call.State state) {
+        if (TextUtils.isEmpty(title)) {
+            mUpperTitle.setVisibility(View.GONE);
+            return;
+        }
+
+        mUpperTitle.setVisibility(View.VISIBLE);
         mUpperTitle.setText(title);
         mUpperTitle.setTextColor(color);
 
