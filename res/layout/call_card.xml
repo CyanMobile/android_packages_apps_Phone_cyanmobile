@@ -106,6 +106,7 @@
     <!-- Label (like "Mobile" or "Work", if present) and phone number, side by side -->
     <LinearLayout android:id="@+id/labelAndNumber"
                   android:orientation="horizontal"
+                  android:layout_below="@id/name"
                   android:layout_width="wrap_content"
                   android:layout_height="wrap_content" >
 
