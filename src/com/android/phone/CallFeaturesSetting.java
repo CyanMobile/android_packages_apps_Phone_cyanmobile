@@ -28,9 +28,12 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.database.Cursor;
+import android.database.sqlite.SQLiteException;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.media.AudioManager;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.net.sip.SipManager;
 import android.net.sip.SipProfile;
 import android.os.AsyncResult;
@@ -42,9 +45,11 @@ import android.preference.ListPreference;
 import android.preference.Preference;
 import android.preference.PreferenceActivity;
 import android.preference.PreferenceGroup;
+import android.preference.PreferenceManager;
 import android.preference.PreferenceScreen;
 import android.provider.Settings;
 import android.provider.ContactsContract.CommonDataKinds;
+import android.provider.MediaStore;
 import android.telephony.PhoneNumberUtils;
 import android.text.TextUtils;
 import android.util.Log;
@@ -141,6 +146,7 @@ public class CallFeaturesSetting extends PreferenceActivity
     public static final String BUTTON_VOICEMAIL_NOTIFICATION_KEY =
             "button_voicemail_notification";
 
+    private static final String BUTTON_RINGTONE_KEY = "button_ringtone_key";
     private static final String BUTTON_DTMF_KEY   = "button_dtmf_settings";
     private static final String BUTTON_RETRY_KEY  = "button_auto_retry_key";
     private static final String BUTTON_TTY_KEY    = "button_tty_mode_key";
@@ -172,6 +178,8 @@ public class CallFeaturesSetting extends PreferenceActivity
     private static final int EVENT_VOICEMAIL_CHANGED        = 500;
     private static final int EVENT_FORWARDING_CHANGED       = 501;
     private static final int EVENT_FORWARDING_GET_COMPLETED = 502;
+
+    private static final int MSG_UPDATE_RINGTONE_SUMMARY = 1;
 
     // preferred TTY mode
     // Phone.TTY_MODE_xxx
@@ -217,6 +225,20 @@ public class CallFeaturesSetting extends PreferenceActivity
     private static final int MSG_VM_NOCHANGE = 700;
 
     private EditPhoneNumberPreference mSubMenuVoicemailSettings;
+
+    private Runnable mRingtoneLookupRunnable;
+    private final Handler mRingtoneLookupComplete = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+            case MSG_UPDATE_RINGTONE_SUMMARY:
+                mRingtonePreference.setSummary((CharSequence) msg.obj);
+                break;
+            }
+        }
+    };
+
+    private Preference mRingtonePreference;
 
     private CheckBoxPreference mButtonNotifications;
     private CheckBoxPreference mButtonAutoRetry;
@@ -495,6 +517,10 @@ public class CallFeaturesSetting extends PreferenceActivity
     private ListPreference mTrackballHangup;
     static String mTrackHangup;
 
+    private static final String BUTTON_AUTO_ANSWERS = "button_auto_answers";
+    private ListPreference mAutoAnswers;
+    static String mAutoAnswerVal;
+
     //Hide Hold button
     private static final String BUTTON_HIDE_HOLD_BUTTON = "button_hide_hold_button";
     private CheckBoxPreference mButtonHideHoldButton;
@@ -567,6 +593,7 @@ public class CallFeaturesSetting extends PreferenceActivity
      * @param objValue should be the value of the selection, NOT its localized
      * display value.
      */
+    @Override
     public boolean onPreferenceChange(Preference preference, Object objValue) {
         if (preference == mButtonDTMF) {
             int index = mButtonDTMF.findIndexOfValue((String) objValue);
@@ -642,6 +669,7 @@ public class CallFeaturesSetting extends PreferenceActivity
     }
 
     // Preference click listener invoked on OnDialogClosed for EditPhoneNumberPreference.
+    @Override
     public void onDialogClosed(EditPhoneNumberPreference preference, int buttonClicked) {
         if (DBG) log("onPreferenceClick: request preference click on dialog close: " +
                 buttonClicked);
@@ -706,6 +734,7 @@ public class CallFeaturesSetting extends PreferenceActivity
      * This method set the default values for the various
      * EditPhoneNumberPreference dialogs.
      */
+    @Override
     public String onGetDefaultNumber(EditPhoneNumberPreference preference) {
         if (preference == mSubMenuVoicemailSettings) {
             // update the voicemail number field, which takes care of the
@@ -1569,6 +1598,7 @@ public class CallFeaturesSetting extends PreferenceActivity
             mSubMenuVoicemailSettings.setDialogTitle(R.string.voicemail_settings_number_label);
         }
 
+        mRingtonePreference = findPreference(BUTTON_RINGTONE_KEY);
         mButtonNotifications = (CheckBoxPreference) findPreference(BUTTON_VOICEMAIL_NOTIFICATION_KEY);
         mButtonDTMF = (ListPreference) findPreference(BUTTON_DTMF_KEY);
         mButtonAutoRetry = (CheckBoxPreference) findPreference(BUTTON_RETRY_KEY);
@@ -1701,6 +1731,16 @@ public class CallFeaturesSetting extends PreferenceActivity
         mVMProviderSettingsForced = false;
         createSipCallSettings();
 
+        mRingtoneLookupRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (mRingtonePreference != null) {
+                    updateRingtoneName(RingtoneManager.TYPE_RINGTONE, mRingtonePreference,
+                            MSG_UPDATE_RINGTONE_SUMMARY);
+                }
+            }
+        };
+
         // add by cytown for vibrate
         init(getApplicationContext(), PreferenceManager.getDefaultSharedPreferences(getApplicationContext()));
         mButtonVibOutgoing = (CheckBoxPreference) prefSet.findPreference(BUTTON_VIBRATE_OUTGOING);
@@ -1754,6 +1794,9 @@ public class CallFeaturesSetting extends PreferenceActivity
         mTrackballHangup = (ListPreference) prefSet.findPreference(BUTTON_TRACKBALL_HANGUP);
         mTrackballHangup.setValue(mTrackHangup);
 
+        mAutoAnswers = (ListPreference) prefSet.findPreference(BUTTON_AUTO_ANSWERS);
+        mAutoAnswers.setValue(mAutoAnswerVal);
+
         if (mButtonVoiceQuality != null) {
             mButtonVoiceQuality.setValue(mVoiceQuality);
         }
@@ -1780,6 +1823,36 @@ public class CallFeaturesSetting extends PreferenceActivity
             ((PreferenceCategory) prefSet.findPreference(CATEGORY_ADVANCED))
                     .removePreference(mButtonHideHoldButton);
         }
+    }
+
+    /**
+     * Updates ringtone name. This is a method copied from com.android.settings.SoundSettings
+     *
+     * @see com.android.settings.SoundSettings
+     */
+    private void updateRingtoneName(int type, Preference preference, int msg) {
+        if (preference == null) return;
+        Uri ringtoneUri = RingtoneManager.getActualDefaultRingtoneUri(this, type);
+        CharSequence summary = getString(com.android.internal.R.string.ringtone_unknown);
+        // Is it a silent ringtone?
+        if (ringtoneUri == null) {
+            summary = getString(com.android.internal.R.string.ringtone_silent);
+        } else {
+            // Fetch the ringtone title from the media provider
+            try {
+                Cursor cursor = getContentResolver().query(ringtoneUri,
+                        new String[] { MediaStore.Audio.Media.TITLE }, null, null, null);
+                if (cursor != null) {
+                    if (cursor.moveToFirst()) {
+                        summary = cursor.getString(0);
+                    }
+                    cursor.close();
+                }
+            } catch (SQLiteException sqle) {
+                // Unknown title for the ringtone
+            }
+        }
+        mRingtoneLookupComplete.sendMessage(mRingtoneLookupComplete.obtainMessage(msg, summary));
     }
 
     private void createSipCallSettings() {
@@ -1882,6 +1955,15 @@ public class CallFeaturesSetting extends PreferenceActivity
                 mButtonRingDelay.setSummary(mPrefEntry);
             }
         }
+
+        lookupRingtoneName();
+    }
+
+    /**
+     * Lookups ringtone name asynchronously and updates the relevant Preference.
+     */
+    private void lookupRingtoneName() {
+        new Thread(mRingtoneLookupRunnable).start();
     }
 
     private boolean isAirplaneModeOn() {
@@ -2212,6 +2294,7 @@ public class CallFeaturesSetting extends PreferenceActivity
         mBgIncall = pref.getBoolean(BG_INCALL_SCREEN, false);
         mTrackAnswer = pref.getString(BUTTON_TRACKBALL_ANSWER, "-1");
         mTrackHangup = pref.getString(BUTTON_TRACKBALL_HANGUP, "-1");
+        mAutoAnswerVal = pref.getString(BUTTON_AUTO_ANSWERS, "-1");
         mHideHoldButton = pref.getBoolean(BUTTON_HIDE_HOLD_BUTTON, false);
         mBlackRegex = pref.getBoolean(BUTTON_BLACK_REGEX, false);
         if (TextUtils.isEmpty(context.getResources().getString(R.string.voice_quality_param))) {
@@ -2377,6 +2460,7 @@ public class CallFeaturesSetting extends PreferenceActivity
         // Trackball Answer & Hangup
         outState.putString(BUTTON_TRACKBALL_ANSWER, mTrackballAnswer.getValue());
         outState.putString(BUTTON_TRACKBALL_HANGUP, mTrackballHangup.getValue());
+        outState.putString(BUTTON_AUTO_ANSWERS, mAutoAnswers.getValue());
         outState.putBoolean(BUTTON_HIDE_HOLD_BUTTON, mButtonHideHoldButton.isChecked());
         if (mButtonVoiceQuality != null) {
             outState.putString(BUTTON_VOICE_QUALITY_KEY, mButtonVoiceQuality.getValue());

@@ -16,9 +16,12 @@
 
 package com.android.phone;
 
+import java.util.List;
+
 import com.android.internal.telephony.Call;
 import com.android.internal.telephony.CallerInfo;
 import com.android.internal.telephony.CallerInfoAsyncQuery;
+import com.android.internal.telephony.CallStateException;
 import com.android.internal.telephony.cdma.CdmaCallWaitingNotification;
 import com.android.internal.telephony.cdma.SignalToneUtil;
 import com.android.internal.telephony.cdma.CdmaInformationRecords.CdmaDisplayInfoRec;
@@ -142,6 +145,7 @@ public class CallNotifier extends Handler
     private static final int PHONE_ENHANCED_VP_OFF = 10;
     private static final int PHONE_RINGBACK_TONE = 11;
     private static final int PHONE_RESEND_MUTE = 12;
+    private static final int PHONE_AUTO_ANSWER = 13;
 
     // Events generated internally:
     private static final int PHONE_MWI_CHANGED = 21;
@@ -394,6 +398,11 @@ public class CallNotifier extends Handler
                 onSuppServiceNotification((AsyncResult) msg.obj);
                 break;
 
+            case PHONE_AUTO_ANSWER:
+                // Called after auto answer timer expires
+                onPhoneAutoAnswer();
+                break;
+
             default:
                 // super.handleMessage(msg);
         }
@@ -410,6 +419,16 @@ public class CallNotifier extends Handler
             onCfiChanged(cfi);
         }
     };
+
+    private void onPhoneAutoAnswer() {
+        Log.d(LOG_TAG, "Autoanswering ringing call");
+        Call ringingCall = mCM.getFirstActiveRingingCall();
+       if (ringingCall != null) {
+            PhoneUtils.answerCall(ringingCall);
+        } else {
+            Log.e(LOG_TAG, "No ringing call to answer!!");
+        }
+    }
 
     private void onNewRingingConnection(AsyncResult r) {
         Connection c = (Connection) r.result;
@@ -521,9 +540,24 @@ public class CallNotifier extends Handler
         // - don't ring for call waiting connections
         // - do this before showing the incoming call panel
         if (PhoneUtils.isRealIncomingCall(state)) {
+            int mAutoAnswer = -1;
+            try {
+              mAutoAnswer = Integer.parseInt(mSettings.mAutoAnswerVal);
+            }catch(Exception e){}
+
+            // Reset Auto answer timeout
+            removeMessages(PHONE_AUTO_ANSWER);
             showIncomingCall();
             startIncomingCallQuery(c);
             //startSensor();
+
+            // If Auto Answer feature has been enabled, the call is automatically
+            // answered after a timeout value selected by the user.
+            if (mAutoAnswer > -1) {
+                Log.d(LOG_TAG, "Will auto-answer in " + mAutoAnswer/1000 + " seconds");
+                Message message = Message.obtain(this, PHONE_AUTO_ANSWER);
+                sendMessageDelayed(message, mAutoAnswer);
+            }
         } else {
             if (mSettings.mVibCallWaiting) {
                 mApplication.vibrate(200,300,500);
@@ -1138,15 +1172,10 @@ public class CallNotifier extends Handler
 
             NotificationMgr.getDefault().cancelCallInProgressNotification();
 
-            // If the InCallScreen is *not* in the foreground, forcibly
-            // dismiss it to make sure it won't still be in the activity
-            // history.  (But if it *is* in the foreground, don't mess
-            // with it; it needs to be visible, displaying the "Call
-            // ended" state.)
-            if (!mApplication.isShowingCallScreen()) {
-                if (VDBG) log("onDisconnect: force InCallScreen to finish()");
-                mApplication.dismissCallScreen();
-            } else {
+            // If the screen is turned off when all the phone calls are hung up,
+            // InCallScreen#onDisconnect() will wake up the screen (only once) and let users
+            // check the disconnected status.
+            if (mApplication.isShowingCallScreen()) {
                 if (VDBG) log("onDisconnect: In call screen. Set short timeout.");
                 mApplication.clearUserActivityTimeout();
             }
@@ -1239,22 +1268,6 @@ public class CallNotifier extends Handler
                 // connection open for a few extra seconds so we can show the
                 // "busy" indication to the user.  We could stop the busy tone
                 // when *that* connection's "disconnect" event comes in.)
-            }
-
-            if (mCM.getState() == Phone.State.IDLE) {
-                // Release screen wake locks if the in-call screen is not
-                // showing. Otherwise, let the in-call screen handle this because
-                // it needs to show the call ended screen for a couple of
-                // seconds.
-                if (!mApplication.isShowingCallScreen()) {
-                    if (VDBG) log("- NOT showing in-call screen; releasing wake locks!");
-                    mApplication.setScreenTimeout(PhoneApp.ScreenTimeoutDuration.DEFAULT);
-                    mApplication.requestWakeState(PhoneApp.WakeState.SLEEP);
-                } else {
-                    if (VDBG) log("- still showing in-call screen; not releasing wake locks.");
-                }
-            } else {
-                if (VDBG) log("- phone still in use; not releasing wake locks.");
             }
 
             if (((mPreviousCdmaCallState == Call.State.DIALING)

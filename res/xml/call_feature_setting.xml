@@ -17,6 +17,13 @@
     xmlns:phone="http://schemas.android.com/apk/res/com.android.phone"
         android:title="@string/call_settings">
 
+    <com.android.phone.DefaultRingtonePreference
+           android:key="button_ringtone_key"
+           android:title="@string/ringtone_title"
+           android:dialogTitle="@string/ringtone_title"
+           android:persistent="false"
+           android:ringtoneType="ringtone" />
+
     <PreferenceScreen
         android:key="button_fdn_key"
         android:title="@string/fdn"
@@ -88,6 +95,14 @@
         android:title="@string/lockscreen_if_call_ends_with_screenoff"
         android:persistent="false"
         android:summary="@string/lockscreen_if_call_ends_with_screenoff_sum"/>
+    <ListPreference
+        android:key="button_auto_answers"
+        android:title="@string/auto_answers"
+        android:summary="@string/sum_auto_answers"
+        android:entries="@array/auto_answersLabels" 
+        android:entryValues="@array/auto_answersValues"
+        android:dialogTitle="@string/auto_answers"
+        android:persistent="false" />
     <CheckBoxPreference
         android:key="button_vibrate_outgoing"
         android:title="@string/vibrate_outgoing"
