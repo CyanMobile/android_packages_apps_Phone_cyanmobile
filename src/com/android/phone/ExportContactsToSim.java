@@ -140,8 +140,7 @@ public class ExportContactsToSim extends Activity {
             // Extract the name.
             String name = dataCursor.getString(nameIdx);
             // Extract the phone number.
-            String rawNumber = dataCursor.getString(phoneIdx);
-            String number = PhoneNumberUtils.formatNumber(rawNumber);
+            String number = dataCursor.getString(phoneIdx);
             ContentValues values = new ContentValues();
             values.put("tag", name);
             values.put("number", number);
