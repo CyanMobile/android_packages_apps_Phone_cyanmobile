@@ -692,6 +692,8 @@ public class BluetoothHandsfree {
                 break;
             case DIALING:
                 callsetup = 2;
+                // Open the SCO channel for the outgoing call.
+                audioOn();
                 mAudioPossible = true;
                 // We also need to send a Call started indication
                 // for cases where the 2nd MO was initiated was
@@ -705,8 +707,6 @@ public class BluetoothHandsfree {
                 break;
             case ALERTING:
                 callsetup = 3;
-                // Open the SCO channel for the outgoing call.
-                audioOn();
                 mAudioPossible = true;
                 break;
             case DISCONNECTING:
@@ -1564,6 +1564,35 @@ public class BluetoothHandsfree {
             @Override
             public AtCommandResult handleSetCommand(Object[] args) {
                 return headsetButtonPress();
+            }
+        });
+
+        // Microphone Gain
+        parser.register("+VGM", new AtCommandHandler() {
+            @Override
+            public AtCommandResult handleSetCommand(Object[] args) {
+                // AT+VGM=<gain>    in range [0,15]
+                // Headset/Handsfree is reporting its current gain setting
+                return new AtCommandResult(AtCommandResult.OK);
+            }
+        });
+
+        // Speaker Gain
+        parser.register("+VGS", new AtCommandHandler() {
+            @Override
+            public AtCommandResult handleSetCommand(Object[] args) {
+                // AT+VGS=<gain>    in range [0,15]
+                if (args.length != 1 || !(args[0] instanceof Integer)) {
+                    return new AtCommandResult(AtCommandResult.ERROR);
+                }
+                Integer value = (Integer) args[0];
+                if (value < 0 || value > 15) {
+                    return new AtCommandResult(AtCommandResult.ERROR);
+                }
+                mScoGain = value;
+                mAudioManager.setStreamVolume(AudioManager.STREAM_BLUETOOTH_SCO, mScoGain,
+                        mAudioManager.isBluetoothScoOn() ? AudioManager.FLAG_SHOW_UI : 0);
+                return new AtCommandResult(AtCommandResult.OK);
             }
         });
     }

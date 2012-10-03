@@ -201,8 +201,14 @@
         android:title="@string/black_list"
         android:summary="@string/black_list_sum"
         android:persistent="false">
+        <CheckBoxPreference
+            android:key="enable_black_list"
+            android:title="@string/black_list_enable_title"
+            android:summary="@string/black_list_sum"
+            android:persistent="false" />
         <com.android.phone.EditPhoneNumberPreference
             android:key="button_add_black"
+            android:dependency="enable_black_list"
             android:title="@string/add_black"
             android:persistent="false"
             android:dialogTitle="@string/add_black"
@@ -211,10 +217,14 @@
             android:autoText="false"/>
         <CheckBoxPreference
             android:key="button_black_regex"
+            android:dependency="enable_black_list"
             android:title="@string/black_regex_title"
             android:summary="@string/black_regex_summary"
             android:persistent="false" />
-        <PreferenceCategory android:key="cat_black_list" android:title="@string/black_list"/>
+        <PreferenceCategory
+            android:key="cat_black_list"
+            android:dependency="enable_black_list"
+            android:title="@string/black_list"/>
     </PreferenceScreen>
 </PreferenceCategory>
 

@@ -483,6 +483,10 @@ public class CallFeaturesSetting extends PreferenceActivity
     private CheckBoxPreference mBgIncallScreen;
     static boolean mBgIncall;
 
+    private static final String BUTTON_ENABLE_BLACKLIST = "enable_black_list";
+    private CheckBoxPreference mButtonEnableBlacklist;
+    static boolean mEnableBlacklist;
+
     private static final String BUTTON_BLACK_REGEX = "button_black_regex";
     private CheckBoxPreference mButtonBlackRegex;
     static boolean mBlackRegex;
@@ -1781,6 +1785,8 @@ public class CallFeaturesSetting extends PreferenceActivity
         mRotateIncallScreen.setChecked(mRotateIncall);
         mBgIncallScreen = (CheckBoxPreference) prefSet.findPreference(BG_INCALL_SCREEN);
         mBgIncallScreen.setChecked(mBgIncall);
+        mButtonEnableBlacklist = (CheckBoxPreference) prefSet.findPreference(BUTTON_ENABLE_BLACKLIST);
+        mButtonEnableBlacklist.setChecked(mEnableBlacklist);
         mButtonAddBlack = (EditPhoneNumberPreference) prefSet.findPreference(BUTTON_ADD_BLACK);
         mButtonAddBlack.setParentActivity(this, ADD_BLACK_LIST_ID, this);
         mButtonAddBlack.setDialogOnClosedListener(this);
@@ -2296,6 +2302,7 @@ public class CallFeaturesSetting extends PreferenceActivity
         mTrackHangup = pref.getString(BUTTON_TRACKBALL_HANGUP, "-1");
         mAutoAnswerVal = pref.getString(BUTTON_AUTO_ANSWERS, "-1");
         mHideHoldButton = pref.getBoolean(BUTTON_HIDE_HOLD_BUTTON, false);
+        mEnableBlacklist = pref.getBoolean(BUTTON_ENABLE_BLACKLIST, false);
         mBlackRegex = pref.getBoolean(BUTTON_BLACK_REGEX, false);
         if (TextUtils.isEmpty(context.getResources().getString(R.string.voice_quality_param))) {
             mVoiceQuality = null;
@@ -2352,7 +2359,7 @@ public class CallFeaturesSetting extends PreferenceActivity
     }
 
     public boolean addBlackList(String s) {
-        if (s == null || s.equals("") || isBlackList(s))
+        if (s == null || s.equals("") || matchesBlackList(s))
             return false;
         setBlackList.add(new PhoneNo(s));
         saveBLFile();
@@ -2365,6 +2372,13 @@ public class CallFeaturesSetting extends PreferenceActivity
     }
 
     public boolean isBlackList(String s) {
+        if (!mEnableBlacklist) {
+            return false;
+        }
+        return matchesBlackList(s);
+    }
+
+    private boolean matchesBlackList(String s) {
         // System.out.println(setBlackList + ":" + s);
         if (setBlackList.contains(new PhoneNo(s)))
             return true;
@@ -2456,6 +2470,7 @@ public class CallFeaturesSetting extends PreferenceActivity
                 mButtonForceTouch == null || mButtonForceTouch.isChecked());
         outState.putBoolean(ROTATE_INCALL_SCREEN, mRotateIncallScreen.isChecked());
         outState.putBoolean(BG_INCALL_SCREEN, mBgIncallScreen.isChecked());
+        outState.putBoolean(BUTTON_ENABLE_BLACKLIST, mButtonEnableBlacklist.isChecked());
         outState.putBoolean(BUTTON_BLACK_REGEX, mButtonBlackRegex.isChecked());
         // Trackball Answer & Hangup
         outState.putString(BUTTON_TRACKBALL_ANSWER, mTrackballAnswer.getValue());
