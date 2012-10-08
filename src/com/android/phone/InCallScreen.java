@@ -178,7 +178,8 @@ public class InCallScreen extends Activity
     private static final int SUPP_SERVICE_NOTIFY = 123;
     private static final int REQUEST_UPDATE_CALL_STATE = 124;
     private static final int REQUEST_UPDATE_SCREEN = 125;
-    private static final int PHONE_NEW_RINGING_CONNECTION = 126;
+    private static final int PHONE_INCOMING_RING = 126;
+    private static final int PHONE_NEW_RINGING_CONNECTION = 127;
 
     //following constants are used for OTA Call
     public static final String ACTION_SHOW_ACTIVATION =
@@ -533,6 +534,10 @@ public class InCallScreen extends Activity
 
                 case REQUEST_UPDATE_SCREEN:
                     updateScreen();
+                    break;
+
+                case PHONE_INCOMING_RING:
+                    onIncomingRing();
                     break;
 
                 case PHONE_NEW_RINGING_CONNECTION:
@@ -1199,9 +1204,10 @@ public class InCallScreen extends Activity
             mCM.registerForMmiComplete(mHandler, PhoneApp.MMI_COMPLETE, null);
             mCM.registerForCallWaiting(mHandler, PHONE_CDMA_CALL_WAITING, null);
             mCM.registerForPostDialCharacter(mHandler, POST_ON_DIAL_CHARS, null);
-            mCM.registerForSuppServiceFailed(mHandler, SUPP_SERVICE_FAILED, null);
             mCM.registerForCdmaOtaStatusChange(mHandler, EVENT_OTA_PROVISION_CHANGE, null);
             mCM.registerForSuppServiceNotification(mHandler, SUPP_SERVICE_NOTIFY, null);
+            mCM.registerForSuppServiceFailed(mHandler, SUPP_SERVICE_FAILED, null);
+            mCM.registerForIncomingRing(mHandler, PHONE_INCOMING_RING, null);
             mCM.registerForNewRingingConnection(mHandler, PHONE_NEW_RINGING_CONNECTION, null);
             mRegisteredForPhoneStates = true;
         }
@@ -1213,10 +1219,11 @@ public class InCallScreen extends Activity
         mCM.unregisterForMmiInitiate(mHandler);
         mCM.unregisterForMmiComplete(mHandler);
         mCM.unregisterForCallWaiting(mHandler);
-        mCM.unregisterForSuppServiceFailed(mHandler);
         mCM.unregisterForPostDialCharacter(mHandler);
         mCM.unregisterForCdmaOtaStatusChange(mHandler);
         mCM.unregisterForSuppServiceNotification(mHandler);
+        mCM.unregisterForSuppServiceFailed(mHandler);
+        mCM.unregisterForIncomingRing(mHandler);
         mCM.unregisterForNewRingingConnection(mHandler);
         mRegisteredForPhoneStates = false;
     }
@@ -1238,6 +1245,15 @@ public class InCallScreen extends Activity
         // to call requestUpdateScreen() even if the radio change ended up
         // causing us to exit the InCallScreen.)
         requestUpdateScreen();
+    }
+
+    /**
+     * Handles an incoming RING event from the telephony layer.
+     */
+    private void onIncomingRing() {
+        if (mIsForegroundActivity && (mInCallTouchUi != null)) {
+            mInCallTouchUi.onIncomingRing();	
+        }	
     }
 
     @Override

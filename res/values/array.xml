@@ -53,6 +53,27 @@
         <item>@string/sip_always_send_keepalive_entry</item>
     </string-array>
 
+    <array name="lockscreen_targets_with_smsreject">
+        <item>@*android:drawable/ic_lockscreen_answer</item>
+        <item>@*android:drawable/ic_lockscreen_sms</item>
+        <item>@*android:drawable/ic_lockscreen_decline</item>
+        <item>@null</item>"
+    </array>
+
+    <array name="lockscreen_targets_without_smsreject">
+        <item>@*android:drawable/ic_lockscreen_answer</item>
+        <item>@null</item>
+        <item>@*android:drawable/ic_lockscreen_decline</item>
+        <item>@null</item>"
+    </array>
+
+    <array name="lockscreen_chevron_drawables">	
+        <item>@*android:drawable/ic_lockscreen_chevron_right</item>
+        <item>@null</item>
+        <item>@*android:drawable/ic_lockscreen_chevron_left</item>	
+        <item>@null</item>
+    </array>
+
     <string-array translatable="false" name="voice_quality_entries">
         <!-- Overlay appropriately, using string constants as above. E.g.:
         <item>@string/voice_quality_normal</item>

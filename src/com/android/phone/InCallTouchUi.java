@@ -18,6 +18,8 @@ package com.android.phone;
 
 import android.content.Context;
 import android.graphics.drawable.Drawable;
+import android.os.Handler;
+import android.os.Message;
 import android.os.SystemClock;
 import android.provider.CmSystem.InCallStyle;
 import android.provider.CmSystem.RotaryStyle;
@@ -42,8 +44,9 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.widget.SlidingTab;
 import com.android.internal.widget.RingSelector;
 import com.android.internal.widget.RotarySelector;
+import com.android.internal.widget.multiwaveview.MultiWaveView;
+import com.android.internal.widget.multiwaveview.GlowPadView;
 import com.android.internal.telephony.CallManager;
-
 
 /**
  * In-call onscreen touch UI elements, used on some platforms.
@@ -53,7 +56,8 @@ import com.android.internal.telephony.CallManager;
  */
 public class InCallTouchUi extends FrameLayout
         implements View.OnClickListener, SlidingTab.OnTriggerListener,
-        RotarySelector.OnDialTriggerListener, RingSelector.OnRingTriggerListener {
+        RotarySelector.OnDialTriggerListener, RingSelector.OnRingTriggerListener,
+        MultiWaveView.OnTriggerListener, GlowPadView.OnTriggerListener {
     private static final int IN_CALL_WIDGET_TRANSITION_TIME = 250; // in ms
     private static final String LOG_TAG = "InCallTouchUi";
     private static final boolean DBG = (PhoneApp.DBG_LEVEL >= 2);
@@ -69,6 +73,8 @@ public class InCallTouchUi extends FrameLayout
     private SlidingTab mIncomingSlidingTabCallWidget;  // UI used for an incoming call
     private RotarySelector mIncomingRotarySelectorCallWidget;  // UI used for an incoming call
     private RingSelector mIncomingRingSelectorCallWidget;  // UI used for an incoming call
+    private MultiWaveView mIncomingMultiWaveViewCallWidget;  // UI used for an incoming call
+    private GlowPadView mIncomingGlowPadViewCallWidget;  // UI used for an incoming call
 
     private View mInCallControls;  // UI elements while on a regular call
     //
@@ -101,12 +107,42 @@ public class InCallTouchUi extends FrameLayout
     // Overall enabledness of the "touch UI" features
     private boolean mAllowIncomingCallTouchUi;
     private boolean mAllowInCallTouchUi;
+    private boolean mIncomingCallWidgetShouldBeReset = true;
 
     private CallFeaturesSetting mSettings;
 
     // Look up the various UI elements.
     private boolean mUseRotaryInCall;
     private boolean mUseRingInCall;
+    private boolean mUseMultiWaveInCall;
+    private boolean mUseGlowPadInCall;
+
+    // Parameters for the MultiWaveView "ping" animation; see triggerPing().
+    private static final boolean ENABLE_PING_ON_RING_EVENTS = false;
+    private static final boolean ENABLE_PING_AUTO_REPEAT = true;
+    private static final long PING_AUTO_REPEAT_DELAY_MSEC = 1200;
+
+    private static final int INCOMING_MULTI_CALL_WIDGET_PING = 101;
+    private static final int INCOMING_GLOW_CALL_WIDGET_PING = 102;
+    private Handler mHandler = new Handler() {
+            @Override
+            public void handleMessage(Message msg) {
+                // If the InCallScreen activity isn't around any more,
+                // there's no point doing anything here.
+                if (mInCallScreen == null) return;
+
+                switch (msg.what) {
+                    case INCOMING_MULTI_CALL_WIDGET_PING:
+                        triggerJbRingPing();
+                        break;
+                    case INCOMING_GLOW_CALL_WIDGET_PING:
+                        triggerJbGlowRingPing();
+                        break;
+                    default:
+                        break;
+                }
+            }
+        };
 
     public InCallTouchUi(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -177,6 +213,13 @@ public class InCallTouchUi extends FrameLayout
             mIncomingSlidingTabCallWidget.setRightHintText(R.string.slide_to_decline_hint);
 
             mIncomingSlidingTabCallWidget.setOnTriggerListener(this);
+
+        mIncomingMultiWaveViewCallWidget = (MultiWaveView) findViewById(R.id.incomingMultiWaveViewCallWidget);
+        mIncomingMultiWaveViewCallWidget.setOnTriggerListener(this);
+
+        mIncomingGlowPadViewCallWidget = (GlowPadView) findViewById(R.id.incomingGlowPadViewCallWidget);
+        mIncomingGlowPadViewCallWidget.setOnTriggerListener(this);
+
         //}
 
         updateInCallStyle();
@@ -661,6 +704,33 @@ public class InCallTouchUi extends FrameLayout
     public void onTrigger(View v, int whichHandle) {
         log("onTrigger(whichHandle = " + whichHandle + ")...");
 
+      if (mUseMultiWaveInCall) {
+         final int resId = mIncomingMultiWaveViewCallWidget.getResourceIdForTarget(whichHandle);
+         switch (resId) {
+             case com.android.internal.R.drawable.ic_lockscreen_answer:
+                acceptCallTriggered();
+                break;
+             case com.android.internal.R.drawable.ic_lockscreen_sms:
+                smsReplyTriggered();
+                break;
+             case com.android.internal.R.drawable.ic_lockscreen_decline:
+                rejectCallTriggered();
+                break;
+        }
+      } else if (mUseGlowPadInCall) {
+         final int resId = mIncomingGlowPadViewCallWidget.getResourceIdForTarget(whichHandle);
+         switch (resId) {
+             case com.android.internal.R.drawable.ic_lockscreen_answer:
+                acceptCallTriggered();
+                break;
+             case com.android.internal.R.drawable.ic_lockscreen_sms:
+                smsReplyTriggered();
+                break;
+             case com.android.internal.R.drawable.ic_lockscreen_decline:
+                rejectCallTriggered();
+                break;
+        }
+      } else {
         switch (whichHandle) {
             case SlidingTab.OnTriggerListener.LEFT_HANDLE:
                 if (DBG) log("LEFT_HANDLE: answer!");
@@ -678,7 +748,7 @@ public class InCallTouchUi extends FrameLayout
                 Log.e(LOG_TAG, "onDialTrigger: unexpected whichHandle value: " + whichHandle);
                 break;
         }
-
+      }
         // Regardless of what action the user did, be sure to clear out
         // the hint text we were displaying while the user was dragging.
         mInCallScreen.updateRotarySelectorHint(0, 0);
@@ -745,6 +815,18 @@ public class InCallTouchUi extends FrameLayout
                 // Widget is already hidden or in the process of being hidden
                 return;
             }
+        } else if (mUseMultiWaveInCall) {
+            if (mIncomingMultiWaveViewCallWidget.getVisibility() != View.VISIBLE
+                || mIncomingMultiWaveViewCallWidget.getAnimation() != null) {
+                // Widget is already hidden or in the process of being hidden
+                return;
+            }
+        } else if (mUseGlowPadInCall) {
+            if (mIncomingGlowPadViewCallWidget.getVisibility() != View.VISIBLE
+                || mIncomingGlowPadViewCallWidget.getAnimation() != null) {
+                // Widget is already hidden or in the process of being hidden
+                return;
+            }
         } else {
             if (mIncomingSlidingTabCallWidget.getVisibility() != View.VISIBLE
                 || mIncomingSlidingTabCallWidget.getAnimation() != null) {
@@ -772,6 +854,12 @@ public class InCallTouchUi extends FrameLayout
                 } else if (mUseRingInCall) {
                     mIncomingRingSelectorCallWidget.clearAnimation();
                     mIncomingRingSelectorCallWidget.setVisibility(View.GONE);
+                } else if (mUseMultiWaveInCall) {
+                    mIncomingMultiWaveViewCallWidget.clearAnimation();
+                    mIncomingMultiWaveViewCallWidget.setVisibility(View.GONE);
+                } else if (mUseGlowPadInCall) {
+                    mIncomingGlowPadViewCallWidget.clearAnimation();
+                    mIncomingGlowPadViewCallWidget.setVisibility(View.GONE);
                 } else {
                     mIncomingSlidingTabCallWidget.clearAnimation();
                     mIncomingSlidingTabCallWidget.setVisibility(View.GONE);
@@ -782,6 +870,10 @@ public class InCallTouchUi extends FrameLayout
             mIncomingRotarySelectorCallWidget.startAnimation(anim);
         } else if (mUseRingInCall) {
             mIncomingRingSelectorCallWidget.startAnimation(anim);
+        } else if (mUseMultiWaveInCall) {
+            mIncomingMultiWaveViewCallWidget.startAnimation(anim);
+        } else if (mUseGlowPadInCall) {
+            mIncomingGlowPadViewCallWidget.startAnimation(anim);
         } else {
             mIncomingSlidingTabCallWidget.startAnimation(anim);
         }
@@ -796,6 +888,8 @@ public class InCallTouchUi extends FrameLayout
 
         mUseRotaryInCall = (inCallStyle == InCallStyle.getIdByStyle(InCallStyle.Rotary));
         mUseRingInCall = (inCallStyle == InCallStyle.getIdByStyle(InCallStyle.Ring));
+        mUseMultiWaveInCall = (inCallStyle == InCallStyle.getIdByStyle(InCallStyle.JbRing));
+        mUseGlowPadInCall = (inCallStyle == InCallStyle.getIdByStyle(InCallStyle.JbGlowRing));
 
         int rotaryStyle = Settings.System.getInt(mContext.getContentResolver(),
                 Settings.System.ROTARY_STYLE_PREF,
@@ -805,6 +899,8 @@ public class InCallTouchUi extends FrameLayout
         mIncomingRotarySelectorCallWidget.setRevamped(
                 rotaryStyle == RotaryStyle.getIdByStyle(RotaryStyle.Revamped));
         mIncomingRotarySelectorCallWidget.hideArrows(rotaryHideArrows);
+
+        updateResources();
 
         int ringlockStyle = Settings.System.getInt(mContext.getContentResolver(),
                 Settings.System.RINGLOCK_STYLE_PREF,
@@ -859,8 +955,10 @@ public class InCallTouchUi extends FrameLayout
         allowRespondViaSms = RespondViaSmsManager.allowRespondViaSmsForCall(ringingCall);
         updateInCallStyle();
         mIncomingRotarySelectorCallWidget.setVisibility(mUseRotaryInCall ? View.VISIBLE : View.GONE);
-        mIncomingSlidingTabCallWidget.setVisibility((mUseRotaryInCall || mUseRingInCall) ? View.GONE : View.VISIBLE);
+        mIncomingSlidingTabCallWidget.setVisibility((mUseRotaryInCall || mUseRingInCall || mUseMultiWaveInCall || mUseGlowPadInCall) ? View.GONE : View.VISIBLE);
         mIncomingRingSelectorCallWidget.setVisibility(mUseRingInCall ? View.VISIBLE : View.GONE);
+        mIncomingMultiWaveViewCallWidget.setVisibility(mUseMultiWaveInCall ? View.VISIBLE : View.GONE);
+        mIncomingGlowPadViewCallWidget.setVisibility(mUseGlowPadInCall ? View.VISIBLE : View.GONE);
 
 
 // tolemaC & Superatmel begin
@@ -885,6 +983,14 @@ public class InCallTouchUi extends FrameLayout
                 } else if (mUseRingInCall) {
                     mIncomingRingSelectorCallWidget.clearAnimation();
                     mIncomingRingSelectorCallWidget.setVisibility(View.VISIBLE);
+                } else if (mUseMultiWaveInCall) {
+                    mIncomingMultiWaveViewCallWidget.clearAnimation();
+                    mIncomingMultiWaveViewCallWidget.setVisibility(View.VISIBLE);
+                    mIncomingCallWidgetShouldBeReset = true;
+                } else if (mUseGlowPadInCall) {
+                    mIncomingGlowPadViewCallWidget.clearAnimation();
+                    mIncomingGlowPadViewCallWidget.setVisibility(View.VISIBLE);
+                    mIncomingCallWidgetShouldBeReset = true;
                 } else {
                     mIncomingSlidingTabCallWidget.clearAnimation();
                     mIncomingSlidingTabCallWidget.setVisibility(View.VISIBLE);
@@ -895,18 +1001,26 @@ public class InCallTouchUi extends FrameLayout
             mIncomingRotarySelectorCallWidget.startAnimation(animAlpha);
         } else if (mUseRingInCall) {
             mIncomingRingSelectorCallWidget.startAnimation(animAlpha);
+        } else if (mUseMultiWaveInCall) {
+            mIncomingMultiWaveViewCallWidget.startAnimation(animAlpha);
+        } else if (mUseGlowPadInCall) {
+            mIncomingGlowPadViewCallWidget.startAnimation(animAlpha);
         } else {
             mIncomingSlidingTabCallWidget.startAnimation(animAlpha);
         }
 // tolemaC & Superatmel end
 
-            Animation anim = mIncomingRotarySelectorCallWidget.getAnimation();
+         Animation anim = mIncomingRotarySelectorCallWidget.getAnimation();
             if (anim != null) {
                 anim.reset();
                 if (mUseRotaryInCall) {
                     mIncomingRotarySelectorCallWidget.clearAnimation();
                 } else if (mUseRingInCall) {
                     mIncomingRingSelectorCallWidget.clearAnimation();
+                } else if (mUseMultiWaveInCall) {
+                    mIncomingMultiWaveViewCallWidget.clearAnimation();
+                } else if (mUseGlowPadInCall) {
+                    mIncomingGlowPadViewCallWidget.clearAnimation();
                 } else {
                     mIncomingSlidingTabCallWidget.clearAnimation();
                 }
@@ -918,10 +1032,143 @@ public class InCallTouchUi extends FrameLayout
             } else if (mUseRingInCall) {
                 mIncomingRingSelectorCallWidget.reset(false);
                 mIncomingRingSelectorCallWidget.setVisibility(View.VISIBLE);
+            } else if (mUseMultiWaveInCall) {
+                if (mIncomingCallWidgetShouldBeReset) {
+                    mIncomingMultiWaveViewCallWidget.reset(false);
+                    mIncomingCallWidgetShouldBeReset = false;
+                }
+                mIncomingMultiWaveViewCallWidget.setVisibility(View.VISIBLE);
+                mHandler.removeMessages(INCOMING_MULTI_CALL_WIDGET_PING);
+                mHandler.sendEmptyMessageDelayed(
+                    INCOMING_MULTI_CALL_WIDGET_PING,
+                    // Visual polish: add a small delay here, to make the
+                    // MultiWaveView widget visible for a brief moment
+                    // *before* starting the ping animation.
+                    // This value doesn't need to be very precise.
+                    250 /* msec */);
+            } else if (mUseGlowPadInCall) {
+                if (mIncomingCallWidgetShouldBeReset) {
+                    mIncomingGlowPadViewCallWidget.reset(false);
+                    mIncomingCallWidgetShouldBeReset = false;
+                }
+                mIncomingGlowPadViewCallWidget.setVisibility(View.VISIBLE);
+                mHandler.removeMessages(INCOMING_GLOW_CALL_WIDGET_PING);
+                mHandler.sendEmptyMessageDelayed(
+                    INCOMING_GLOW_CALL_WIDGET_PING,
+                    // Visual polish: add a small delay here, to make the
+                    // MultiWaveView widget visible for a brief moment
+                    // *before* starting the ping animation.
+                    // This value doesn't need to be very precise.
+                    250 /* msec */);
             } else {
                 mIncomingSlidingTabCallWidget.reset(false);
                 mIncomingSlidingTabCallWidget.setVisibility(View.VISIBLE);
             }
+    }
+
+    /**
+     * Handles an incoming RING event from the telephony layer.
+     */
+    public void onIncomingRing() {
+        if (ENABLE_PING_ON_RING_EVENTS) {
+            if (mUseMultiWaveInCall) {
+                triggerJbRingPing();
+            } else if (mUseGlowPadInCall) {
+                triggerJbGlowRingPing();
+            }
+        }
+    }
+
+    /**
+     * Runs a single "ping" animation of the MultiWaveView widget,
+     * or do nothing if the MultiWaveView widget is no longer visible.
+     *
+     * Also, if ENABLE_PING_AUTO_REPEAT is true, schedule the next ping as
+     * well (but again, only if the MultiWaveView widget is still visible.)
+     */
+    public void triggerJbRingPing() {
+        if (!mInCallScreen.isForegroundActivity()) {
+            return;
+        }
+
+        if (mIncomingMultiWaveViewCallWidget == null) {
+            return;
+        }
+        if (mIncomingMultiWaveViewCallWidget.getVisibility() != View.VISIBLE) {
+            return;
+        }
+
+        // Ok, run a ping (and schedule the next one too, if desired...)
+
+        mIncomingMultiWaveViewCallWidget.ping();
+
+        if (ENABLE_PING_AUTO_REPEAT) {
+            // Schedule the next ping.  (ENABLE_PING_AUTO_REPEAT mode
+            // allows the ping animation to repeat much faster than in
+            // the ENABLE_PING_ON_RING_EVENTS case, since telephony RING
+            // events come fairly slowly (about 3 seconds apart.))
+
+            // No need to check here if the call is still ringing, by
+            // the way, since we hide mIncomingCallWidget as soon as the
+            // ringing stops, or if the user answers.  (And at that
+            // point, any future triggerPing() call will be a no-op.)
+
+            // TODO: Rather than having a separate timer here, maybe try
+            // having these pings synchronized with the vibrator (see
+            // VibratorThread in Ringer.java; we'd just need to get
+            // events routed from there to here, probably via the
+            // PhoneApp instance.)  (But watch out: make sure pings
+            // still work even if the Vibrate setting is turned off!)
+
+            mHandler.sendEmptyMessageDelayed(INCOMING_MULTI_CALL_WIDGET_PING,
+                                             PING_AUTO_REPEAT_DELAY_MSEC);
+        }
+    }
+
+    /**
+     * Runs a single "ping" animation of the MultiWaveView widget,
+     * or do nothing if the MultiWaveView widget is no longer visible.
+     *
+     * Also, if ENABLE_PING_AUTO_REPEAT is true, schedule the next ping as
+     * well (but again, only if the MultiWaveView widget is still visible.)
+     */
+    public void triggerJbGlowRingPing() {
+        if (!mInCallScreen.isForegroundActivity()) {
+            return;
+        }
+
+        if (mIncomingGlowPadViewCallWidget == null) {
+            return;
+        }
+        if (mIncomingGlowPadViewCallWidget.getVisibility() != View.VISIBLE) {
+            return;
+        }
+
+        // Ok, run a ping (and schedule the next one too, if desired...)
+
+        mIncomingGlowPadViewCallWidget.ping();
+
+        if (ENABLE_PING_AUTO_REPEAT) {
+            // Schedule the next ping.  (ENABLE_PING_AUTO_REPEAT mode
+            // allows the ping animation to repeat much faster than in
+            // the ENABLE_PING_ON_RING_EVENTS case, since telephony RING
+            // events come fairly slowly (about 3 seconds apart.))
+
+            // No need to check here if the call is still ringing, by
+            // the way, since we hide mIncomingCallWidget as soon as the
+            // ringing stops, or if the user answers.  (And at that
+            // point, any future triggerPing() call will be a no-op.)
+
+            // TODO: Rather than having a separate timer here, maybe try
+            // having these pings synchronized with the vibrator (see
+            // VibratorThread in Ringer.java; we'd just need to get
+            // events routed from there to here, probably via the
+            // PhoneApp instance.)  (But watch out: make sure pings
+            // still work even if the Vibrate setting is turned off!)
+
+            mHandler.sendEmptyMessageDelayed(INCOMING_GLOW_CALL_WIDGET_PING,
+                                             PING_AUTO_REPEAT_DELAY_MSEC);
+        }
     }
 
     /**
@@ -996,6 +1243,22 @@ public class InCallTouchUi extends FrameLayout
                     hintColorResId = 0;
                     break;
                 }
+            } else if (mUseMultiWaveInCall) {
+                if (grabbedState != MultiWaveView.OnTriggerListener.NO_HANDLE) {
+                   hintTextResId = 0;
+                   hintColorResId = 0;
+                } else {
+                   hintTextResId = 0;
+                   hintColorResId = 0;
+                }
+            } else if (mUseGlowPadInCall) {
+                if (grabbedState != GlowPadView.OnTriggerListener.NO_HANDLE) {
+                   hintTextResId = 0;
+                   hintColorResId = 0;
+                } else {
+                   hintTextResId = 0;
+                   hintColorResId = 0;
+                }
             } else {
                 switch (grabbedState) {
                     case SlidingTab.OnTriggerListener.NO_HANDLE:
@@ -1034,6 +1297,48 @@ public class InCallTouchUi extends FrameLayout
         }
     }
 
+    public void updateResources() {
+        int resId;
+        if (allowRespondViaSms) {
+           resId = com.android.phone.R.array.lockscreen_targets_with_smsreject;
+        } else {
+           resId = com.android.phone.R.array.lockscreen_targets_without_smsreject;
+        }
+        if (mUseMultiWaveInCall) {
+            if (mIncomingMultiWaveViewCallWidget.getTargetResourceId() != resId) {
+                mIncomingMultiWaveViewCallWidget.setTargetResources(resId);
+            }
+        } else if (mUseGlowPadInCall) {
+            if (mIncomingGlowPadViewCallWidget.getTargetResourceId() != resId) {
+                mIncomingGlowPadViewCallWidget.setTargetResources(resId);
+            }
+        }
+        setEnabled(com.android.internal.R.drawable.ic_lockscreen_answer, true);
+        setEnabled(com.android.internal.R.drawable.ic_lockscreen_decline, true);
+        if (allowRespondViaSms) {
+            setEnabled(com.android.internal.R.drawable.ic_lockscreen_sms, true);
+        }
+    }
+
+    public void onGrabbed(View v, int handle) {
+
+    }
+
+    public void onReleased(View v, int handle) {
+
+    }
+
+    public void setEnabled(int resourceId, boolean enabled) {
+        if (mUseMultiWaveInCall) {
+            mIncomingMultiWaveViewCallWidget.setEnableTarget(resourceId, enabled);
+        } else if (mUseGlowPadInCall) {
+            mIncomingGlowPadViewCallWidget.setEnableTarget(resourceId, enabled);
+        }
+    }
+
+    public void onFinishFinalAnimation() {
+
+    }
 
     /**
      * OnTouchListener used to shrink the "hit target" of some onscreen
