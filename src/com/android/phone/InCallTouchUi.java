@@ -711,7 +711,9 @@ public class InCallTouchUi extends FrameLayout
                 acceptCallTriggered();
                 break;
              case com.android.internal.R.drawable.ic_lockscreen_sms:
-                smsReplyTriggered();
+                if (mSettings.OktoReject && allowRespondViaSms) {
+                    smsReplyTriggered();
+                }
                 break;
              case com.android.internal.R.drawable.ic_lockscreen_decline:
                 rejectCallTriggered();
@@ -724,7 +726,9 @@ public class InCallTouchUi extends FrameLayout
                 acceptCallTriggered();
                 break;
              case com.android.internal.R.drawable.ic_lockscreen_sms:
-                smsReplyTriggered();
+                if (mSettings.OktoReject && allowRespondViaSms) {
+                    smsReplyTriggered();
+                }
                 break;
              case com.android.internal.R.drawable.ic_lockscreen_decline:
                 rejectCallTriggered();
@@ -960,6 +964,9 @@ public class InCallTouchUi extends FrameLayout
         mIncomingMultiWaveViewCallWidget.setVisibility(mUseMultiWaveInCall ? View.VISIBLE : View.GONE);
         mIncomingGlowPadViewCallWidget.setVisibility(mUseGlowPadInCall ? View.VISIBLE : View.GONE);
 
+        if (mUseMultiWaveInCall || mUseGlowPadInCall) {
+            updateResources();
+        }
 
 // tolemaC & Superatmel begin
         // Show the incoming call screen with a transition
@@ -1244,20 +1251,32 @@ public class InCallTouchUi extends FrameLayout
                     break;
                 }
             } else if (mUseMultiWaveInCall) {
-                if (grabbedState != MultiWaveView.OnTriggerListener.NO_HANDLE) {
-                   hintTextResId = 0;
-                   hintColorResId = 0;
-                } else {
-                   hintTextResId = 0;
-                   hintColorResId = 0;
+                switch (grabbedState) {
+                case MultiWaveView.OnTriggerListener.NO_HANDLE:
+                case MultiWaveView.OnTriggerListener.CENTER_HANDLE:
+                    hintTextResId = 0;
+                    hintColorResId = 0;
+                    break;
+                default:
+                    Log.e(LOG_TAG, "onGrabbedStateChange: unexpected grabbedState: "
+                          + grabbedState);
+                    hintTextResId = 0;
+                    hintColorResId = 0;
+                    break;
                 }
             } else if (mUseGlowPadInCall) {
-                if (grabbedState != GlowPadView.OnTriggerListener.NO_HANDLE) {
-                   hintTextResId = 0;
-                   hintColorResId = 0;
-                } else {
-                   hintTextResId = 0;
-                   hintColorResId = 0;
+                switch (grabbedState) {
+                case GlowPadView.OnTriggerListener.NO_HANDLE:
+                case GlowPadView.OnTriggerListener.CENTER_HANDLE:
+                    hintTextResId = 0;
+                    hintColorResId = 0;
+                    break;
+                default:
+                    Log.e(LOG_TAG, "onGrabbedStateChange: unexpected grabbedState: "
+                          + grabbedState);
+                    hintTextResId = 0;
+                    hintColorResId = 0;
+                    break;
                 }
             } else {
                 switch (grabbedState) {
@@ -1299,7 +1318,7 @@ public class InCallTouchUi extends FrameLayout
 
     public void updateResources() {
         int resId;
-        if (allowRespondViaSms) {
+        if (mSettings.OktoReject && allowRespondViaSms) {
            resId = com.android.phone.R.array.lockscreen_targets_with_smsreject;
         } else {
            resId = com.android.phone.R.array.lockscreen_targets_without_smsreject;
@@ -1315,7 +1334,7 @@ public class InCallTouchUi extends FrameLayout
         }
         setEnabled(com.android.internal.R.drawable.ic_lockscreen_answer, true);
         setEnabled(com.android.internal.R.drawable.ic_lockscreen_decline, true);
-        if (allowRespondViaSms) {
+        if (mSettings.OktoReject && allowRespondViaSms) {
             setEnabled(com.android.internal.R.drawable.ic_lockscreen_sms, true);
         }
     }
