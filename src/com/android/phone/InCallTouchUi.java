@@ -886,7 +886,7 @@ public class InCallTouchUi extends FrameLayout
     private void updateInCallStyle() {
         int inCallStyle = Settings.System.getInt(mContext.getContentResolver(),
                 Settings.System.IN_CALL_STYLE_PREF,
-                InCallStyle.getIdByStyle(InCallStyle.Ring));
+                InCallStyle.getIdByStyle(InCallStyle.JbGlowRing));
         boolean rotaryHideArrows = Settings.System.getInt(mContext.getContentResolver(),
                 Settings.System.LOCKSCREEN_ROTARY_HIDE_ARROWS, 0) == 1;
 
