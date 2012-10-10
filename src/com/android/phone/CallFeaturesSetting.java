@@ -908,31 +908,37 @@ public class CallFeaturesSetting extends PreferenceActivity
             saveVoiceMailAndForwardingNumber(getCurrentVoicemailProviderKey(),
                     new VoiceMailProviderSettings(vmNum, fwdNum, fwdNumTime));
             return;
-        }
+       } else if (requestCode == VOICEMAIL_PREF_ID) {
+            if (resultCode != RESULT_OK) {
+                if (DBG) log("onActivityResult: contact picker result not OK.");
+                return;
+            }
 
-        if (resultCode != RESULT_OK) {
-            if (DBG) log("onActivityResult: contact picker result not OK.");
+            Cursor cursor = getContentResolver().query(data.getData(),
+                   NUM_PROJECTION, null, null, null);
+            if ((cursor == null) || (!cursor.moveToFirst())) {
+                if (DBG) log("onActivityResult: bad contact data, no results found.");
+                return;
+            }
+            mSubMenuVoicemailSettings.onPickActivityResult(cursor.getString(0));
+            return;
+        } else if (requestCode == ADD_BLACK_LIST_ID) {
+            if (resultCode != RESULT_OK) {
+                if (DBG) log("onActivityResult: contact picker result not OK.");
+                return;
+            }
+
+            Cursor cursor = getContentResolver().query(data.getData(),
+                   NUM_PROJECTION, null, null, null);
+            if ((cursor == null) || (!cursor.moveToFirst())) {
+                if (DBG) log("onActivityResult: bad contact data, no results found.");
+                return;
+            }
+            mButtonAddBlack.onPickActivityResult(cursor.getString(0));
             return;
         }
 
-        Cursor cursor = getContentResolver().query(data.getData(),
-                NUM_PROJECTION, null, null, null);
-        if ((cursor == null) || (!cursor.moveToFirst())) {
-            if (DBG) log("onActivityResult: bad contact data, no results found.");
-            return;
-        }
-
-        switch (requestCode) {
-            case VOICEMAIL_PREF_ID:
-                mSubMenuVoicemailSettings.onPickActivityResult(cursor.getString(0));
-                break;
-            // add by cytown
-            case ADD_BLACK_LIST_ID:
-                mButtonAddBlack.onPickActivityResult(cursor.getString(0));
-                break;
-            default:
-                // TODO: may need exception here.
-        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     // Voicemail button logic
