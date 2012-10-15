@@ -10,6 +10,11 @@
     <dimen name="upper_buttons_top_margin">280dp</dimen>
     <dimen name="in_call_button_cluster_height">180dp</dimen>
     <dimen name="in_call_incoming_call_widget_height">260dp</dimen>
-    <dimen name="call_banner_side_padding">10dp</dimen>
-    <dimen name="call_banner_top_bottom_padding">10dp</dimen>
+    <dimen name="call_banner_side_padding">24dp</dimen>
+    <dimen name="call_banner_top_bottom_padding">16dp</dimen>
+    <dimen name="contact_photo_inset_width">180dp</dimen>
+    <dimen name="contact_photo_inset_height">180dp</dimen>
+    <dimen name="contact_photo_inset_left_margin">0dp</dimen>
+    <dimen name="call_state_label_right_padding">10dp</dimen>
+    <dimen name="call_state_label_top_bottom_padding">5dp</dimen>
 </resources>

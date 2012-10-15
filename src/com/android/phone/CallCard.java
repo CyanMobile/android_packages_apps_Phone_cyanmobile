@@ -16,6 +16,8 @@
 
 package com.android.phone;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.content.ContentUris;
 import android.content.Context;
 import android.database.Cursor;
@@ -79,22 +81,17 @@ public class CallCard extends FrameLayout
     private ViewGroup mPrimaryCallBanner;  // "Call banner" for the primary call
     private ViewGroup mSecondaryCallInfo;  // "Call info" block #2 (the background "on hold" call)
 
-    // Title and elapsed-time widgets
-    private TextView mUpperTitle;
+    // "Call state" widgets
+    private TextView mCallStateLabel;
     private TextView mElapsedTime;
 
     // Text colors, used for various labels / titles
-    private int mTextColorDefaultPrimary;
-    private int mTextColorDefaultSecondary;
-    private int mTextColorConnected;
-    private int mTextColorConnectedBluetooth;
-    private int mTextColorEnded;
-    private int mTextColorOnHold;
     private int mTextColorCallTypeSip;
 
     // The main block of info about the "primary" or "active" call,
     // including photo / name / phone number / etc.
-    private ImageView mPhoto;
+    private InCallContactPhoto mPhoto;
+    private View mPhotoDimEffect;
     private Button mManageConferencePhotoButton;  // Possibly shown in place of mPhoto
     private TextView mName;
     private TextView mPhoneNumber;
@@ -106,7 +103,8 @@ public class CallCard extends FrameLayout
     // two lines are in use.
     private TextView mSecondaryCallName;
     private TextView mSecondaryCallStatus;
-    private ImageView mSecondaryCallPhoto;
+    private InCallContactPhoto mSecondaryCallPhoto;
+    private View mSecondaryCallPhotoDimEffect;
 
     // Menu button hint
     private TextView mMenuButtonHint;
@@ -181,24 +179,17 @@ public class CallCard extends FrameLayout
         mPrimaryCallBanner = (ViewGroup) findViewById(R.id.call_banner_1);
         mSecondaryCallInfo = (ViewGroup) findViewById(R.id.call_info_2);
 
-        // "Upper" and "lower" title widgets
-        mUpperTitle = (TextView) findViewById(R.id.upperTitle);
+        mCallStateLabel = (TextView) findViewById(R.id.callStateLabel);
         mElapsedTime = (TextView) findViewById(R.id.elapsedTime);
 
         // Text colors
-        mTextColorDefaultPrimary =  // corresponds to textAppearanceLarge
-                getResources().getColor(android.R.color.primary_text_dark);
-        mTextColorDefaultSecondary =  // corresponds to textAppearanceSmall
-                getResources().getColor(android.R.color.secondary_text_dark);
-        mTextColorConnected = getResources().getColor(R.color.incall_textConnected);
-        mTextColorConnectedBluetooth =
-                getResources().getColor(R.color.incall_textConnectedBluetooth);
-        mTextColorEnded = getResources().getColor(R.color.incall_textEnded);
-        mTextColorOnHold = getResources().getColor(R.color.incall_textOnHold);
         mTextColorCallTypeSip = getResources().getColor(R.color.incall_callTypeSip);
 
         // "Caller info" area, including photo / name / phone numbers / etc
-        mPhoto = (ImageView) findViewById(R.id.photo);
+        mPhoto = (InCallContactPhoto) findViewById(R.id.photo);
+        ImageView inset = (ImageView) findViewById(R.id.insetPhoto);
+        mPhoto.setInsetImageView(inset);
+        mPhotoDimEffect = findViewById(R.id.dim_effect_for_primary_photo);
         mManageConferencePhotoButton = (Button) findViewById(R.id.manageConferencePhotoButton);
         mManageConferencePhotoButton.setOnClickListener(this);
         mName = (TextView) findViewById(R.id.name);
@@ -211,7 +202,8 @@ public class CallCard extends FrameLayout
         // "Other call" info area
         mSecondaryCallName = (TextView) findViewById(R.id.secondaryCallName);
         mSecondaryCallStatus = (TextView) findViewById(R.id.secondaryCallStatus);
-        mSecondaryCallPhoto = (ImageView) findViewById(R.id.secondaryCallPhoto);
+        mSecondaryCallPhoto = (InCallContactPhoto) findViewById(R.id.secondaryCallPhoto);
+        mSecondaryCallPhotoDimEffect = findViewById(R.id.dim_effect_for_secondary_photo);
 
         // Menu Button hint
         mMenuButtonHint = (TextView) findViewById(R.id.menuButtonHint);
@@ -261,23 +253,24 @@ public class CallCard extends FrameLayout
             // The normal "foreground call" code path handles both cases.
             updateForegroundCall(cm);
         } else {
-            // We don't have any DISCONNECTED calls, which means
-            // that the phone is *truly* idle.
-            //
-            // It's very rare to be on the InCallScreen at all in this
-            // state, but it can happen in some cases:
-            // - A stray onPhoneStateChanged() event came in to the
-            //   InCallScreen *after* it was dismissed.
-            // - We're allowed to be on the InCallScreen because
-            //   an MMI or USSD is running, but there's no actual "call"
-            //   to display.
-            // - We're displaying an error dialog to the user
-            //   (explaining why the call failed), so we need to stay on
-            //   the InCallScreen so that the dialog will be visible.
-            //
-            // In these cases, put the callcard into a sane but "blank" state:
-            updateNoCall(cm);
+            if (mInCallScreen.isShowAlreadyDisconnectedState()) {
+                updateAlreadyDisconnected(cm);
+            } else {
+                updateNoCall(cm);
+            }
         }
+    }
+
+    private void updateAlreadyDisconnected(CallManager cm) {
+        // For the foreground call, we manually set up every component based on previous state.
+        mPrimaryCallInfo.setVisibility(View.VISIBLE);
+        mCallStateLabel.setVisibility(View.VISIBLE);
+        mCallStateLabel.setText(mContext.getString(R.string.card_title_call_ended));
+        mElapsedTime.setVisibility(View.VISIBLE);
+        mCallTime.cancelTimer();
+
+        // Just hide it.
+        displayOnHoldCallStatus(cm, null);
     }
 
     /**
@@ -286,16 +279,14 @@ public class CallCard extends FrameLayout
      */
     private void updateCallInfoLayout(Phone.State state) {
         boolean ringing = (state == Phone.State.RINGING);
+        if (DBG) log("updateCallInfoLayout()...  ringing = " + ringing);
 
         // Based on whether the phone is ringing, update the overall
-        // CallCard layout in a couple of ways:
+        // CallCard layout:
 
-        // (1) When ringing, shrink mCallInfoContainer by increasing its bottom margin.
-        //     (The incoming-call widget takes up more vertical space than the
-        //     regular in-call button cluster, so while ringing the bottom
-        //     margin needs to be larger so that the call info doesn't overlap
-        //     the widget.)
-        // TODO: Animate this value for the RINGING -> OFFHOOK transition.
+        // - Update the bottom margin of mCallInfoContainer to make sure
+        //   the call info area won't overlap with the touchable
+        //   controls on the bottom part of the screen.
 
         int resId = ringing ? R.dimen.in_call_incoming_call_widget_height
                 : R.dimen.in_call_button_cluster_height;
@@ -304,20 +295,8 @@ public class CallCard extends FrameLayout
                 (ViewGroup.MarginLayoutParams) mCallInfoContainer.getLayoutParams();
         callInfoLp.bottomMargin = reservedVerticalSpace;  // Equivalent to setting
                                                           // android:layout_marginBottom in XML
+        if (DBG) log("  ==> callInfoLp.bottomMargin: " + reservedVerticalSpace);
         mCallInfoContainer.setLayoutParams(callInfoLp);
-	
-        // (2) Normally, the "call banner" is overlaid across the top of
-        //     the contact photo.  But when ringing, move the banner down to
-        //     the bottom of the photo; this makes it more centered on the
-        //     screen, and closer to the incoming-call widget.
-        //
-        //     Note that while ringing, we only ever display info about one
-        //     call (i.e. the "primary call"), even if two lines are in use.
-        RelativeLayout.LayoutParams bannerLp =
-                (RelativeLayout.LayoutParams) mPrimaryCallBanner.getLayoutParams();
-        bannerLp.addRule(RelativeLayout.ALIGN_PARENT_TOP, ringing ? 0 : RelativeLayout.TRUE);
-        bannerLp.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM, ringing ? RelativeLayout.TRUE : 0);
-        mPrimaryCallBanner.setLayoutParams(bannerLp);
     }
 
     /**
@@ -473,7 +452,7 @@ public class CallCard extends FrameLayout
                 break;
         }
 
-        updateCardTitleWidgets(call.getPhone(), call);
+        updateCallStateWidgets(call);
 
         if (PhoneUtils.isConferenceCall(call)) {
             // Update onscreen info for a conference call.
@@ -662,141 +641,145 @@ public class CallCard extends FrameLayout
     }
 
     /**
-     * Updates the "card title" (and also elapsed time widget) based on
-     * the current state of the call.
+     * Updates the "call state label" and the elapsed time widget based on the
+     * current state of the call.
      */
-    // TODO: it's confusing for updateCardTitleWidgets() and
-    // getTitleForCallCard() to be separate methods, since they both
-    // just list out the exact same "phone state" cases.
-    // Let's merge the getTitleForCallCard() logic into here.
-    private void updateCardTitleWidgets(Phone phone, Call call) {
-        if (DBG) log("updateCardTitleWidgets(call " + call + ")...");
-        Call.State state = call.getState();
-        Context context = getContext();
+    private void updateCallStateWidgets(Call call) {
+        if (DBG) log("updateCallStateWidgets(call " + call + ")...");
+        final Call.State state = call.getState();
+        final Context context = getContext();
+        final Phone phone = call.getPhone();
+        final int phoneType = phone.getPhoneType();
 
-        // TODO: Still need clearer spec on exactly how title *and* status get
-        // set in all states.  (Then, given that info, refactor the code
-        // here to be more clear about exactly which widgets on the card
-        // need to be set.)
+        String callStateLabel = null;  // Label to display as part of the call banner
+        int bluetoothIconId = 0;  // Icon to display alongside the call state label
 
-        String cardTitle;
-        int phoneType = phone.getPhoneType();
-        if (phoneType == Phone.PHONE_TYPE_CDMA) {
-            if (!PhoneApp.getInstance().notifier.getIsCdmaRedialCall()) {
-                cardTitle = getTitleForCallCard(call);  // Normal "foreground" call card
-            } else {
-                cardTitle = context.getString(R.string.card_title_redialing);
-            }
-        } else if ((phoneType == Phone.PHONE_TYPE_GSM)
-                || (phoneType == Phone.PHONE_TYPE_SIP)) {
-            cardTitle = getTitleForCallCard(call);
-        } else {
-            throw new IllegalStateException("Unexpected phone type: " + phoneType);
-        }
-        if (DBG) log("updateCardTitleWidgets: " + cardTitle);
-
-        // Update the title and elapsed time widgets based on the current call state.
         switch (state) {
-            case ACTIVE:
-            case DISCONNECTING:
-                final boolean bluetoothActive = mApplication.showBluetoothIndication();
-                int ongoingCallIcon = bluetoothActive ? R.drawable.ic_incall_ongoing_bluetooth
-                        : R.drawable.ic_incall_ongoing;
-                int connectedTextColor = bluetoothActive
-                        ? mTextColorConnectedBluetooth : mTextColorConnected;
-
-                if (phoneType == Phone.PHONE_TYPE_CDMA) {
-                    // In normal operation we don't use an "upper title" at all,
-                    // except for a couple of special cases:
-                    if (mApplication.cdmaPhoneCallState.IsThreeWayCallOrigStateDialing()) {
-                        // Display "Dialing" while dialing a 3Way call, even
-                        // though the foreground call state is still ACTIVE.
-                        setUpperTitle(cardTitle, mTextColorDefaultPrimary, state);
-                    } else if (PhoneUtils.isPhoneInEcm(phone)) {
-                        // In emergency callback mode (ECM), use a special title
-                        // that shows your own phone number.
-                        cardTitle = getECMCardTitle(context, phone);
-                        setUpperTitle(cardTitle, mTextColorDefaultPrimary, state);
-                    } else {
-                        // Normal "ongoing call" state; don't use any "title" at all.
-                        clearUpperTitle();
-                    }
-                } else if ((phoneType == Phone.PHONE_TYPE_GSM)
-                        || (phoneType == Phone.PHONE_TYPE_SIP)) {
-                    // While in the DISCONNECTING state we display a
-                    // "Hanging up" message in order to make the UI feel more
-                    // responsive.  (In GSM it's normal to see a delay of a
-                    // couple of seconds while negotiating the disconnect with
-                    // the network, so the "Hanging up" state at least lets
-                    // the user know that we're doing something.)
-                    // TODO: consider displaying the "Hanging up" state for
-                    // CDMA also if the latency there ever gets high enough.
-                    if (state == Call.State.DISCONNECTING) {
-                        // Display the brief "Hanging up" indication.
-                        setUpperTitle(cardTitle, mTextColorDefaultPrimary, state);
-                    } else {  // state == Call.State.ACTIVE
-                        if (mApplication.notifier.isCallHeldRemotely(call)) {
-                            // Show indication that the call is currently waiting
-                            setUpperTitle(cardTitle, mTextColorDefaultPrimary, state);
-                        } else {
-                            // Normal "ongoing call" state; don't use any "title" at all.
-                            clearUpperTitle();
-                        }
-                    }
-                }
-
-                // Use the elapsed time widget to show the current call duration.
-                mElapsedTime.setVisibility(View.VISIBLE);
-                mElapsedTime.setTextColor(connectedTextColor);
-                long duration = CallTime.getCallDuration(call);  // msec
-                updateElapsedTimeWidget(duration / 1000);
-                // Also see onTickForCallTimeElapsed(), which updates this
-                // widget once per second while the call is active.
+            case IDLE:
+                // "Call state" is meaningless in this state.
                 break;
 
-            case DISCONNECTED:
-                // Display "Call ended" (or possibly some error indication;
-                // see getCallFailedString()) in the upper title, in red.
-
-                // TODO: display a "call ended" icon somewhere, like the old
-                // R.drawable.ic_incall_end?
-
-                setUpperTitle(cardTitle, mTextColorEnded, state);
-
-                // In the "Call ended" state, leave the mElapsedTime widget
-                // visible, but don't touch it (so  we continue to see the elapsed time of
-                // the call that just ended.)
-                mElapsedTime.setVisibility(View.VISIBLE);
-                mElapsedTime.setTextColor(mTextColorEnded);
+            case ACTIVE:
+                // We normally don't show a "call state label" at all in
+                // this state (but see below for some special cases).
                 break;
 
             case HOLDING:
-                // For a single call on hold, display the title "On hold" in
-                // orange.
-                // (But since the upper title overlaps the label of the
-                // Hold/Unhold button, we actually use the elapsedTime widget
-                // to display the title in this case.)
+                callStateLabel = context.getString(R.string.card_title_on_hold);
+                break;
 
-                // TODO: display an "On hold" icon somewhere, like the old
-                // R.drawable.ic_incall_onhold?
+            case DIALING:
+            case ALERTING:
+                callStateLabel = context.getString(R.string.card_title_dialing);
+                break;
 
-                clearUpperTitle();
-                mElapsedTime.setText(cardTitle);
+            case INCOMING:
+            case WAITING:
+                callStateLabel = context.getString(R.string.card_title_incoming_call);
 
-                // While on hold, the elapsed time widget displays an
-                // "on hold" indication rather than an amount of time.
-                mElapsedTime.setVisibility(View.VISIBLE);
-                mElapsedTime.setTextColor(mTextColorOnHold);
+                // Also, display a special icon (alongside the "Incoming call"
+                // label) if there's an incoming call and audio will be routed
+                // to bluetooth when you answer it.
+                if (mApplication.showBluetoothIndication()) {
+                    bluetoothIconId = R.drawable.ic_incoming_call_bluetooth;
+                }
+                break;
+
+            case DISCONNECTING:
+                // While in the DISCONNECTING state we display a "Hanging up"
+                // message in order to make the UI feel more responsive.  (In
+                // GSM it's normal to see a delay of a couple of seconds while
+                // negotiating the disconnect with the network, so the "Hanging
+                // up" state at least lets the user know that we're doing
+                // something.  This state is currently not used with CDMA.)
+                callStateLabel = context.getString(R.string.card_title_hanging_up);
+                break;
+
+            case DISCONNECTED:
+                callStateLabel = getCallFailedString(call);
                 break;
 
             default:
-                // All other states (DIALING, INCOMING, etc.) use the "upper title":
-                setUpperTitle(cardTitle, mTextColorDefaultPrimary, state);
-
-                // ...and we don't show the elapsed time.
-                mElapsedTime.setVisibility(View.INVISIBLE);
+                Log.wtf(LOG_TAG, "updateCallStateWidgets: unexpected call state: " + state);
                 break;
         }
+
+        // Check a couple of other special cases (these are all CDMA-specific).
+
+        if (phoneType == Phone.PHONE_TYPE_CDMA) {
+            if ((state == Call.State.ACTIVE)
+                && mApplication.cdmaPhoneCallState.IsThreeWayCallOrigStateDialing()) {
+                // Display "Dialing" while dialing a 3Way call, even
+                // though the foreground call state is actually ACTIVE.
+                callStateLabel = context.getString(R.string.card_title_dialing);
+            } else if (PhoneApp.getInstance().notifier.getIsCdmaRedialCall()) {
+                callStateLabel = context.getString(R.string.card_title_redialing);
+            }
+        }
+        if (PhoneUtils.isPhoneInEcm(phone)) {
+            // In emergency callback mode (ECM), use a special label
+            // that shows your own phone number.
+            callStateLabel = getECMCardTitle(context, phone);
+        }
+
+        if (DBG) log("==> callStateLabel: '" + callStateLabel
+                     + "', bluetoothIconId = " + bluetoothIconId);
+
+        // Update (or hide) the onscreen widget:
+        if (TextUtils.isEmpty(callStateLabel)) {
+            // When hiding, do a smooth fade-out animation.
+            Fade.hide(mCallStateLabel, View.GONE);
+        } else {
+            mCallStateLabel.setVisibility(View.VISIBLE);
+            mCallStateLabel.setText(callStateLabel);
+
+            // ...and display the icon too if necessary.
+            if (bluetoothIconId != 0) {
+                mCallStateLabel.setCompoundDrawablesWithIntrinsicBounds(bluetoothIconId, 0, 0, 0);
+                mCallStateLabel.setCompoundDrawablePadding((int) (mDensity * 5));
+            } else {
+                // Clear out any icons
+                mCallStateLabel.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0);
+            }
+        }
+
+        // ...and update the elapsed time widget too.
+        switch (state) {
+            case ACTIVE:
+            case DISCONNECTING:
+                mElapsedTime.setVisibility(View.VISIBLE);
+                updateElapsedTimeWidget(call);
+                break;
+
+            case DISCONNECTED:
+                // In the "Call ended" state, leave the mElapsedTime widget
+                // visible, but don't touch it (so we continue to see the
+                // elapsed time of the call that just ended.)
+                mElapsedTime.setVisibility(View.VISIBLE);
+                break;
+
+            default:
+                // In all other states (DIALING, INCOMING, HOLDING, etc.),
+                // the "elapsed time" is meaningless, so don't show it.
+                mElapsedTime.setVisibility(View.INVISIBLE);
+                if ((state ==  Call.State.DIALING) || (state == Call.State.ALERTING)) {
+                    updateElapsedTimeWidget(0);
+                }
+                break;
+        }
+    }
+
+    /**
+     * Updates mElapsedTime based on the given {@link Call} object's information.	
+     *
+     * @see CallTime#getCallDuration(Call)
+     * @see Connection#getDurationMillis()
+     */
+    /* package */ void updateElapsedTimeWidget(Call call) {
+        long duration = CallTime.getCallDuration(call);  // msec
+        updateElapsedTimeWidget(duration / 1000);
+        // Also see onTickForCallTimeElapsed(), which updates this
+        // widget once per second while the call is active.
     }
 
     /**
@@ -810,75 +793,6 @@ public class CallCard extends FrameLayout
         } else {
             mElapsedTime.setText(DateUtils.formatElapsedTime(timeElapsed));
         }
-    }
-
-    /**
-     * Returns the "card title" displayed at the top of a foreground
-     * ("active") CallCard to indicate the current state of this call, like
-     * "Dialing" or "In call" or "On hold".  A null return value means that
-     * there's no title string for this state.
-     */
-    private String getTitleForCallCard(Call call) {
-        String retVal = null;
-        Call.State state = call.getState();
-        Context context = getContext();
-
-        if (DBG) log("- getTitleForCallCard(Call " + call + ")...");
-
-        switch (state) {
-            case IDLE:
-                break;
-
-            case ACTIVE:
-                // Title is "Call in progress".  (Note this appears in the
-                // "lower title" area of the CallCard.)
-                int phoneType = call.getPhone().getPhoneType();
-                if (phoneType == Phone.PHONE_TYPE_CDMA) {
-                    if (mApplication.cdmaPhoneCallState.IsThreeWayCallOrigStateDialing()) {
-                        retVal = context.getString(R.string.card_title_dialing);
-                    } else {
-                        retVal = context.getString(R.string.card_title_in_progress);
-                    }
-                } else if (phoneType == Phone.PHONE_TYPE_GSM) {
-                    if (mApplication.notifier.isCallHeldRemotely(call)) {
-                        retVal = context.getString(R.string.card_title_waiting_call);
-                    } else {
-                        retVal = context.getString(R.string.card_title_in_progress);
-                    }
-                } else if (phoneType == Phone.PHONE_TYPE_SIP) {
-                    retVal = context.getString(R.string.card_title_in_progress);
-                } else {
-                    throw new IllegalStateException("Unexpected phone type: " + phoneType);
-                }
-                break;
-
-            case HOLDING:
-                retVal = context.getString(R.string.card_title_on_hold);
-                // TODO: if this is a conference call on hold,
-                // maybe have a special title here too?
-                break;
-
-            case DIALING:
-            case ALERTING:
-                retVal = context.getString(R.string.card_title_dialing);
-                break;
-
-            case INCOMING:
-            case WAITING:
-                retVal = context.getString(R.string.card_title_incoming_call);
-                break;
-
-            case DISCONNECTING:
-                retVal = context.getString(R.string.card_title_hanging_up);
-                break;
-
-            case DISCONNECTED:
-                retVal = getCallFailedString(call);
-                break;
-        }
-
-        if (DBG) log("  ==> result: " + retVal);
-        return retVal;
     }
 
     /**
@@ -936,7 +850,7 @@ public class CallCard extends FrameLayout
                 }
 
                 showSecondaryCallInfo = true;
-
+                Fade.show(mSecondaryCallPhotoDimEffect);
                 break;
 
             case ACTIVE:
@@ -993,6 +907,7 @@ public class CallCard extends FrameLayout
                     Log.w(LOG_TAG, "displayOnHoldCallStatus: ACTIVE state on non-CDMA device");
                     showSecondaryCallInfo = false;
                 }
+                Fade.hide(mSecondaryCallPhotoDimEffect, View.GONE);
                 break;
 
             default:
@@ -1227,9 +1142,14 @@ public class CallCard extends FrameLayout
         // conference" button in this state.
         mManageConferencePhotoButton.setVisibility(View.GONE);
 
+        if (call.getState() == Call.State.HOLDING) {
+            Fade.show(mPhotoDimEffect);
+        } else {
+            Fade.hide(mPhotoDimEffect, View.GONE);
+        }
+
         if (displayNumber != null && !call.isGeneric()) {
             mPhoneNumber.setText(displayNumber);
-            mPhoneNumber.setTextColor(mTextColorDefaultSecondary);
             mPhoneNumber.setVisibility(View.VISIBLE);
         } else {
             mPhoneNumber.setVisibility(View.GONE);
@@ -1534,41 +1454,6 @@ public class CallCard extends FrameLayout
     }
 
     /**
-     * Sets the CallCard "upper title".  Also, depending on the passed-in
-     * Call state, possibly display an icon along with the title.
-     */
-    private void setUpperTitle(String title, int color, Call.State state) {
-        if (TextUtils.isEmpty(title)) {
-            mUpperTitle.setVisibility(View.GONE);
-            return;
-        }
-
-        mUpperTitle.setVisibility(View.VISIBLE);
-        mUpperTitle.setText(title);
-        mUpperTitle.setTextColor(color);
-
-        int bluetoothIconId = 0;
-        if (!TextUtils.isEmpty(title)
-                && ((state == Call.State.INCOMING) || (state == Call.State.WAITING))
-                && mApplication.showBluetoothIndication()) {
-            // Display the special bluetooth icon also, if this is an incoming
-            // call and the audio will be routed to bluetooth.
-            bluetoothIconId = R.drawable.ic_incoming_call_bluetooth;
-        }
-
-        mUpperTitle.setCompoundDrawablesWithIntrinsicBounds(bluetoothIconId, 0, 0, 0);
-        if (bluetoothIconId != 0) mUpperTitle.setCompoundDrawablePadding((int) (mDensity * 5));
-    }
-
-    /**
-     * Clears the CallCard "upper title", for states (like a normal
-     * ongoing call) where we don't use any "title" at all.
-     */
-    private void clearUpperTitle() {
-        setUpperTitle("", 0, Call.State.IDLE);  // Use dummy values for "color" and "state"
-    }
-
-    /**
      * Returns the special card title used in emergency callback mode (ECM),
      * which shows your own phone number.
      */
@@ -1607,7 +1492,6 @@ public class CallCard extends FrameLayout
         } else if (call != null && mApplication.notifier.isCallForwarded(call)) {
             mCallTypeLabel.setVisibility(View.VISIBLE);
             mCallTypeLabel.setText(R.string.incall_call_type_label_forwarded);
-            mCallTypeLabel.setTextColor(mTextColorDefaultSecondary);
         } else {
             mCallTypeLabel.setVisibility(View.GONE);
         }
@@ -1687,7 +1571,7 @@ public class CallCard extends FrameLayout
     // get pronounced by a screen reader, for example.)
     @Override
     public boolean dispatchPopulateAccessibilityEvent(AccessibilityEvent event) {
-        dispatchPopulateAccessibilityEvent(event, mUpperTitle);
+        dispatchPopulateAccessibilityEvent(event, mCallStateLabel);
         dispatchPopulateAccessibilityEvent(event, mPhoto);
         dispatchPopulateAccessibilityEvent(event, mManageConferencePhotoButton);
         dispatchPopulateAccessibilityEvent(event, mName);
@@ -1710,10 +1594,78 @@ public class CallCard extends FrameLayout
         }
     }
 
+    /**
+     * Simple Utility class that runs fading animations on specified views.
+     */
+    public static class Fade {
+        private static final boolean FADE_DBG = false;
+        private static final long DURATION = 250;  // msec
+
+        // View tag that's set during the fade-out animation; see hide() and
+        // isFadingOut().
+        private static final int FADE_STATE_KEY = R.id.fadeState;
+        private static final String FADING_OUT = "fading_out";
+
+        /**
+         * Sets the visibility of the specified view to View.VISIBLE and then
+         * fades it in. If the view is already visible (and not in the middle
+         * of a fade-out animation), this method will return without doing
+         * anything.
+         *
+         * @param view The view to be faded in
+         */
+        public static void show(final View view) {
+            if (FADE_DBG) log("Fade: SHOW view " + view + "...");
+            if (FADE_DBG) log("Fade: - visibility = " + view.getVisibility());
+            if ((view.getVisibility() != View.VISIBLE) || isFadingOut(view)) {
+                view.setTag(FADE_STATE_KEY, null);
+                view.setVisibility(View.VISIBLE);
+            }
+        }
+
+        /**
+         * Fades out the specified view and then sets its visibility to the
+         * specified value (either View.INVISIBLE or View.GONE). If the view
+         * is not currently visibile, the method will return without doing
+         * anything.
+         *
+         * Note that *during* the fade-out the view itself will still have
+         * visibility View.VISIBLE, although the isFadingOut() method will
+         * return true (in case the UI code needs to detect this state.)
+         *
+         * @param view The view to be hidden
+         * @param visibility The value to which the view's visibility will be
+         *                   set after it fades out.
+         * Must be either View.VISIBLE or View.INVISIBLE.
+         */
+        public static void hide(final View view, final int visibility) {
+            if (FADE_DBG) log("Fade: HIDE view " + view + "...");
+            if (view.getVisibility() == View.VISIBLE &&
+                (visibility == View.INVISIBLE || visibility == View.GONE)) {
+                view.setTag(FADE_STATE_KEY, FADING_OUT);
+                view.setVisibility(visibility);
+                view.setTag(FADE_STATE_KEY, null);
+            }
+        }
+
+        /**
+         * @return true if the specified view is currently in the middle
+         * of a fade-out animation.  (During the fade-out, the view's
+         * visibility is still VISIBLE, although in many cases the UI
+         * should behave as if it's already invisible or gone.  This
+         * method allows the UI code to detect that state.)
+         *
+         * @see hide()
+         */
+        public static boolean isFadingOut(final View view) {
+            return (view.getTag(FADE_STATE_KEY) == FADING_OUT);
+        }
+
+    }
 
     // Debugging / testing code
 
-    private void log(String msg) {
+    private static void log(String msg) {
         Log.d(LOG_TAG, msg);
     }
 }

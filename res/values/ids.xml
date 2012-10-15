@@ -39,4 +39,5 @@
     <item type="id" name="answerButton" />
     <item type="id" name="rejectButton" />
     <item type="id" name="incomingCallRespondViaSms" />
+    <item type="id" name="fadeState" />
 </resources>

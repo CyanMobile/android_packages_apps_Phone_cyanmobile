@@ -703,7 +703,8 @@ public class DTMFTwelveKeyDialer implements
             return mDialerDrawer.isOpened();
         } else {
             // Otherwise, return whether or not the dialer view is visible.
-            return mDialerView.getVisibility() == View.VISIBLE;
+            return ((mDialerView.getVisibility() == View.VISIBLE)
+                && !CallCard.Fade.isFadingOut(mDialerView));
         }
     }
 
@@ -735,8 +736,11 @@ public class DTMFTwelveKeyDialer implements
             } else {
                 // If we're not using a SlidingDrawer, just make
                 // the dialer view visible.
-                // TODO: add a fade-in animation if "animate" is true?
-                mDialerView.setVisibility(View.VISIBLE);
+                if (animate) {
+                   CallCard.Fade.show(mDialerView);
+                } else {
+                   mDialerView.setVisibility(View.VISIBLE);
+                }
 
                 // And since we're not using a SlidingDrawer, we won't get an
                 // onDrawerOpened() event, so we have to to manually trigger
@@ -766,8 +770,11 @@ public class DTMFTwelveKeyDialer implements
             } else {
                 // If we're not using a SlidingDrawer, just hide
                 // the dialer view.
-                // TODO: add a fade-out animation if "animate" is true?
-                mDialerView.setVisibility(View.GONE);
+                if (animate) {
+                   CallCard.Fade.hide(mDialerView, View.GONE);
+                } else {
+                   mDialerView.setVisibility(View.GONE);
+                }
 
                 // And since we're not using a SlidingDrawer, we won't get an
                 // onDrawerClosed() event, so we have to to manually trigger

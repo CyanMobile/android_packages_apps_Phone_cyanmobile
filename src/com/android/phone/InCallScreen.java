@@ -1859,7 +1859,8 @@ public class InCallScreen extends Activity
      * Something has changed in the phone's state.  Update the UI.
      */
     private void onPhoneStateChanged(AsyncResult r) {
-        if (DBG) log("onPhoneStateChanged()...");
+        Phone.State state = mCM.getState();
+        if (DBG) log("onPhoneStateChanged: current state = " + state);
 
         // There's nothing to do here if we're not the foreground activity.
         // (When we *do* eventually come to the foreground, we'll do a
@@ -4341,13 +4342,13 @@ public class InCallScreen extends Activity
             }
 
             if (isDialerOpened()) {
-                mInCallPanel.setVisibility(View.GONE);
+                CallCard.Fade.hide(mInCallPanel, View.GONE);
             } else {
                 // Dialpad is dismissed; bring back the CallCard if
                 // it's supposed to be visible.
                 if ((mInCallScreenMode == InCallScreenMode.NORMAL)
                     || (mInCallScreenMode == InCallScreenMode.CALL_ENDED)) {
-                    mInCallPanel.setVisibility(View.VISIBLE);
+                    CallCard.Fade.show(mInCallPanel);
                 }
             }
         }
