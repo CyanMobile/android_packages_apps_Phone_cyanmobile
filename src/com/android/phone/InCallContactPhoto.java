@@ -167,7 +167,7 @@ public class InCallContactPhoto extends ImageView {
             if (blurredBitmapDrawable != null) {
                 if (DBG) log("- Show the special effect!  blurredBitmapDrawable = "
                              + blurredBitmapDrawable);
-                super.setImageDrawable(blurredBitmapDrawable);
+                super.setImageDrawable(inputDrawable);
                 // And show the original (sharp) image in the inset.
                 showInset(inputDrawable);
             } else {
