@@ -49,6 +49,7 @@
                    android:layout_height="match_parent"
                    android:layout_alignParentTop="true"
                    android:layout_alignParentLeft="true"
+                   android:scaleType="fitXY"
                    android:background="@drawable/incall_photo_border_lg"
                    android:contentDescription="@string/contactPhoto"
                    />
@@ -99,7 +100,7 @@
               android:layout_width="wrap_content"
               android:layout_height="wrap_content"
               android:layout_alignParentTop="true"
-              android:layout_alignParentLeft="true"
+              android:layout_alignParentRight="true"
               />
 
     <!-- Label (like "Mobile" or "Work", if present) and phone number, side by side -->
@@ -179,7 +180,7 @@
             android:layout_below="@id/call_banner_1"
             android:layout_width="@dimen/contact_photo_inset_width"
             android:layout_height="@dimen/contact_photo_inset_height"
-            android:scaleType="centerCrop"
+            android:scaleType="fitXY"
             android:layout_marginLeft="@dimen/contact_photo_inset_left_margin"
             />
 

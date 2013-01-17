@@ -196,7 +196,7 @@ public class InCallContactPhoto extends ImageView {
         // (If the user somehow gets a contact to have a photo that's between
         // 97 and 255 pixels wide, that's OK, we'll just show it as-is with no
         // special effects.)
-        final int LO_RES_THRESHOLD_WIDTH = 96;
+        final int LO_RES_THRESHOLD_WIDTH = 256;
         if (DBG) log("- isLoRes: checking bitmap with width " + bitmap.getWidth() + "...");
         return (bitmap.getWidth() <= LO_RES_THRESHOLD_WIDTH);
     }
