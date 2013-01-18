@@ -48,8 +48,8 @@
                    android:layout_width="match_parent"
                    android:layout_height="match_parent"
                    android:layout_alignParentTop="true"
-                   android:layout_alignParentLeft="true"
-                   android:background="@drawable/incall_photo_border_lg"
+                   android:scaleType="centerCrop"
+                   android:gravity="top|center_horizontal"
                    android:contentDescription="@string/contactPhoto"
                    />
 
@@ -82,7 +82,7 @@
 
     <!-- Name (or the phone number, if we don't have a name to display). -->
     <TextView android:id="@+id/name"
-              android:paddingRight="50sp"
+              android:paddingRight="@dimen/call_banner_name_number_right_padding"
               android:textAppearance="?android:attr/textAppearanceMedium"
               android:textColor="@color/incall_call_banner_text_color"
               android:singleLine="true"
@@ -96,6 +96,7 @@
     <LinearLayout android:id="@+id/labelAndNumber"
                   android:orientation="horizontal"
                   android:layout_below="@id/name"
+                  android:paddingRight="@dimen/call_banner_name_number_right_padding"
                   android:layout_width="wrap_content"
                   android:layout_height="wrap_content" >
 
@@ -209,7 +210,6 @@
         <!-- Scaled-down photo, or else a generic placeholder image. -->
         <com.android.phone.InCallContactPhoto android:id="@+id/secondaryCallPhoto"
             android:layout_alignParentTop="true"
-            android:layout_alignParentLeft="true"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="centerCrop"

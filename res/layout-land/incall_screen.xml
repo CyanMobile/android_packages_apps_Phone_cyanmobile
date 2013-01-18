@@ -33,11 +33,8 @@
 
         <!-- Main frame containing the main set of in-call UI elements. -->
         <FrameLayout android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:paddingTop="10dip"
-            android:paddingLeft="6dip"
-            android:paddingRight="6dip"
             >
 
             <!-- (1) inCallPanel: the main set of in-call UI elements.

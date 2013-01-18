@@ -287,10 +287,10 @@ public class InCallTouchUi extends FrameLayout
 
         // Icons we need to change dynamically.  (Most other icons are specified
         // directly in incall_touch_ui.xml.)
-        mHoldIcon = getResources().getDrawable(R.drawable.ic_in_call_touch_round_hold);
-        mUnholdIcon = getResources().getDrawable(R.drawable.ic_in_call_touch_round_unhold);
-        mShowDialpadIcon = getResources().getDrawable(R.drawable.ic_in_call_touch_dialpad);
-        mHideDialpadIcon = getResources().getDrawable(R.drawable.ic_in_call_touch_dialpad_close);
+        mHoldIcon = getResources().getDrawable(R.drawable.as_ic_in_call_touch_round_hold);
+        mUnholdIcon = getResources().getDrawable(R.drawable.as_ic_in_call_touch_round_unhold);
+        mShowDialpadIcon = getResources().getDrawable(R.drawable.as_ic_in_call_touch_dialpad);
+        mHideDialpadIcon = getResources().getDrawable(R.drawable.as_ic_in_call_touch_dialpad_close);
     }
 
     /**
