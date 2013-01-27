@@ -16,8 +16,8 @@
 
 package com.android.phone;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
+import android.animationing.Animator;
+import android.animationing.AnimatorListenerAdapter;
 import android.content.ContentUris;
 import android.content.Context;
 import android.database.Cursor;
