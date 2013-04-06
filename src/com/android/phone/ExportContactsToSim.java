@@ -39,6 +39,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.provider.ContactsContract;
+import android.provider.ContactsContract.CommonDataKinds;
+import android.provider.ContactsContract.CommonDataKinds.Phone;
+import android.provider.ContactsContract.Contacts;
+import android.provider.ContactsContract.Data;
 import android.telephony.PhoneNumberUtils;
 import android.util.Log;
 import android.view.Window;
@@ -85,14 +89,35 @@ public class ExportContactsToSim extends Activity {
                 Cursor simContactsCur = getContentResolver().query(uri,
                         COLUMN_NAMES, null, null, null);
 
-                Cursor contactsCursor = getContactsContentCursor();
-                for (int i=0; contactsCursor.moveToNext(); i++) {
-                    String id = getContactIdFromCursor(contactsCursor);
-                    Cursor dataCursor = getDataCursorRelatedToId(id);
-                    populateContactDataFromCursor(dataCursor );
-                    dataCursor.close();
+                final String[] projection = new String[] {
+                    Phone.NUMBER,
+                    Phone.DISPLAY_NAME,
+                    Phone.IS_PRIMARY
+                };
+                final String where = Phone.NUMBER + " NOT NULL";
+                final String orderBy = Phone.DISPLAY_NAME + ", "
+                      + "CASE WHEN " + Phone.IS_PRIMARY + " = 0 THEN 1 ELSE 0 END";
+                final Cursor cursor = getContentResolver().query(Phone.CONTENT_URI,
+                      projection, where, null, orderBy);
+                if (cursor == null) {
+                    mResult = 0;
+                    Message message = Message.obtain(mHandler, CONTACTS_EXPORTED, (Integer)mResult);
+                    mHandler.sendMessage(message);
+                    return;
                 }
-                contactsCursor.close();
+                final int count = cursor.getCount();
+                if (count == 0) {
+                    cursor.close();
+                    mResult = 0;
+                    Message message = Message.obtain(mHandler, CONTACTS_EXPORTED, (Integer)mResult);
+                    mHandler.sendMessage(message);
+                    return;
+                }
+                for (int i = 0; i < count; i++) {
+                     cursor.moveToPosition(i);
+                     populateContactDataFromCursor(cursor.getString(0), cursor.getString(1));
+                }
+                cursor.close();
                 Message message = Message.obtain(mHandler, CONTACTS_EXPORTED, (Integer)mResult);
                 mHandler.sendMessage(message);
             }
@@ -100,8 +125,8 @@ public class ExportContactsToSim extends Activity {
     }
 
     private Cursor getContactsContentCursor() {
-        Uri phoneBookContentUri = ContactsContract.Contacts.CONTENT_URI;
-        String recordsWithPhoneNumberOnly = ContactsContract.Contacts.HAS_PHONE_NUMBER
+        Uri phoneBookContentUri = Contacts.CONTENT_URI;
+        String recordsWithPhoneNumberOnly = Contacts.HAS_PHONE_NUMBER
                 + "='1'";
 
         Cursor contactsCursor = managedQuery(phoneBookContentUri, null,
@@ -111,46 +136,33 @@ public class ExportContactsToSim extends Activity {
 
     private String getContactIdFromCursor(Cursor contactsCursor) {
         String id = contactsCursor.getString(contactsCursor
-                .getColumnIndex(ContactsContract.Contacts._ID));
+                .getColumnIndex(Contacts._ID));
         return id;
     }
 
     private Cursor getDataCursorRelatedToId(String id) {
-        String where = ContactsContract.Data.CONTACT_ID + " = " + id;
-
-
+        String where = Data.CONTACT_ID + " = " + id;
         Cursor dataCursor = getContentResolver().query(
-                ContactsContract.Data.CONTENT_URI, null, where, null, null);
+                Data.CONTENT_URI, null, where, null, null);
         return dataCursor;
     }
 
-    private void populateContactDataFromCursor(final Cursor dataCursor) {
+    private void populateContactDataFromCursor(String number, String name) {
         Uri uri = getUri();
         if (uri == null) {
             Log.d(TAG," populateContactDataFromCursor: uri is null, return ");
             return;
         }
         Uri contactUri;
-        int nameIdx = dataCursor
-                .getColumnIndex(ContactsContract.Data.DISPLAY_NAME);
-        int phoneIdx = dataCursor
-                .getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
-
-        if (dataCursor.moveToFirst()) {
-            // Extract the name.
-            String name = dataCursor.getString(nameIdx);
-            // Extract the phone number.
-            String number = dataCursor.getString(phoneIdx);
-            ContentValues values = new ContentValues();
-            values.put("tag", name);
-            values.put("number", number);
-            Log.d("ExportContactsToSim", "name : " + name + " number : " + number);
-            contactUri = getContentResolver().insert(uri, values);
-            if (contactUri == null) {
-                Log.e("ExportContactsToSim", "Failed to export contact to SIM for " +
-                        "name : " + name + " number : " + number);
-                mResult = 0;
-            }
+        ContentValues values = new ContentValues();
+        values.put("tag", name);
+        values.put("number", number);
+        Log.d("ExportContactsToSim", "name : " + name + " number : " + number);
+        contactUri = getContentResolver().insert(uri, values);
+        if (contactUri == null) {
+            Log.e("ExportContactsToSim", "Failed to export contact to SIM for " +
+                    "name : " + name + " number : " + number);
+            mResult = 0;
         }
     }
 
